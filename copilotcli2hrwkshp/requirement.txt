@@ -1,0 +1,70 @@
+I am planning for a workshop for the team and here is the agenda:
+
+Agenda:
+1.	Introduction & Setup (Foundation)
+•	Overview of GitHub Copilot CLI and its role in AI-driven development
+•	Prerequisites and environment setup (local machine, authentication, terminal setup)
+•	Initial configuration and getting started
+2.	Core Concepts & Architecture
+•	Copilot CLI architecture and interaction model
+•	Configuration layers: local machine, repository, github
+•	Special files and their purpose (e.g., instructions, agent configuration)
+•	How Copilot builds and utilizes context
+3.	Context Management & Optimization
+•	Understanding the context window and limitations
+•	Techniques to optimize prompts and context usage
+•	Managing sessions and improving efficiency
+4.	Copilot CLI Fundamentals
+•	Core CLI experience and interaction patterns
+•	Basic commands and workflows
+•	Modes and session handling
+•	Working effectively in terminal-first development workflows
+5.	Advanced Capabilities
+•	Advanced commands and use cases
+•	Skills and automation of repeatable tasks
+•	Agent-based execution and customization
+6.	Extensibility with MCP (Model Context Protocol)
+•	Introduction to MCP and its importance
+•	Configuring MCP servers
+•	Integrating with external systems (Azure DevOps, Microsoft 365, etc.)
+•	Enhancing Copilot with real-time context
+7.	End-to-End Developer Workflows (Hands-on Scenarios)
+•	Creating and managing pull requests
+•	Reviewing and understanding code changes
+•	Addressing PR feedback
+•	Debugging pipeline failures
+•	Troubleshooting cluster issues
+8.	Wrap-up & Q&A
+•	Key takeaways
+•	Best practices and common pitfalls
+•	Open discussion and scenarios
+
+Use the github copilot cli public documentation and general documentation on creating a very strong tutorial for this workshop.
+Generate a Prerequisites section that I can send 2 days before workshop for folks to get their environment prepped for the workshop.
+The workshop tutorial should be very detailed, with one folder for each section and that can have 1 or more tutorials per section.
+
+Ask me any clarifying questions before you start generating the workshop tutorial.
+
+Make this tutorial inspired from /home/sarsoma/workshops/copilotcli3wkshp - But a more crisp version.
+- One sub-section that covers the concept.
+- One sub-section for practice - to practice the most important things
+- One sub-section for Q&A - to test the knowledge.
+
+For the End to End Workflow - use the public gitput repo - https://github.com/SARSOMA/akri
+- Provide instructions to enlist this project.
+- Provide a prompt to understand the project structure, make a small change (via the prompt), push a PR, etc.
+- As part of this, create a PR for me as well, which I can have. Purposefully have some mistakes there, so that folks can do review from command line and add comments to the same.
+- Since this is a public project, hope anyone can make contributions, check on that.
+
+Let us combine Advanced Capabilities & MCP-extensibility and redefine that section like the following.
+- MCP Overview
+- Provide guidance to add Azure MCP, ADO MCP, Workflow IQ MCP, Bluebird MCP
+- In overview, also cover, where the configurations for these are stored - is that in MCPconfig.json, etc
+- In practice, let us have some prompts to test each one with some simple prompts.
+- Let us introduce skill
+- Let us have a practical skill that leverags these MCP together that people can try out.
+- Let us introduce custom agents
+- Let us have a practical agent that leverags these MCP together that people can try out.
+- Finally a Q&A for all
+
+Let us move MCP Extensibility to the end (As a)
