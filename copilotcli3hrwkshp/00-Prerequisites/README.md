@@ -50,7 +50,7 @@ Download and install from: [code.visualstudio.com](https://code.visualstudio.com
 
 ### Recommended Extensions (Optional)
 - **GitHub Copilot** - For comparison with CLI experience
-- **GitHub Pull Requests and Issues** - For PR workflow demonstrations
+- **GitHub Pull Requests** - For PR workflow demonstrations
 
 ---
 
