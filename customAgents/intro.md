@@ -44,15 +44,18 @@ The key insight: **you're not changing what the model knows — you're changing 
 > - [Customization concepts (VS Code docs)](https://code.visualstudio.com/docs/copilot/concepts/customization) — "AI models have broad general knowledge but don't know your codebase or team practices. Customization is how you share that context."
 > - [About customizing GitHub Copilot responses (GitHub docs)](https://docs.github.com/en/copilot/concepts/prompting/response-customization) — "You can create custom instructions that automatically add this information for you. The additional information is not displayed, but is available to Copilot to allow it to generate higher quality responses."
 
-### Why Custom Agents Matter
+### Why Custom Agents Over Other Customizations?
 
-- **Consistency** — Encode your team's conventions once; every interaction follows them automatically
-- **Specialization** — Domain-specific agents outperform generic prompts because they carry persistent context
-- **Efficiency** — Skip the repeated "act as a..." preamble — agents remember their role
-- **Shareability** — Check agent definitions into your repo and your entire team benefits
-- **Scalability** — From a single markdown file to a full server-side extension to enterprise-wide M365 agents, the approach scales with your needs
+VS Code and Copilot offer several customization options. Here's when you'd reach for each:
 
----
+| Customization | What It Is | Best For | Limitation |
+|---------------|-----------|----------|------------|
+| **Custom Instructions** (`.github/copilot-instructions.md`, `*.instructions.md`) | Always-on rules injected into every request | Project-wide coding standards, naming conventions, preferred libraries | No persona, no tool restrictions — same generic agent, just with extra context |
+| **Prompt Files** (`.prompt.md`) | Reusable prompt templates invoked as slash commands | Repeatable tasks like scaffolding a component or generating a PR description | One-shot — no persistent persona, no tool control, no delegation |
+| **Skills** (`SKILL.md` + scripts/resources) | Multi-step capability packages with scripts and templates | Complex automated workflows like "run security audit" or "generate API docs" | Task-specific toolkit, not a persona — doesn't change *who* the agent is |
+| **Custom Agents** (`.agent.md`) | A full persona with its own instructions, tools, and model preferences | Specialized roles: security reviewer, DB admin, docs writer, planner | Requires more thought to define well |
+
+**Custom agents are the right choice when you want to change *who* the AI is**, not just what it knows or what task it's doing. An agent carries a persistent identity — its own instructions, a curated set of tools, and optionally a specific model. It can also delegate to other agents, enabling multi-step workflows where different specialists handle different parts of a task.
 
 ## About This Workshop
 
