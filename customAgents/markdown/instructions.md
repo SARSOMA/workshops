@@ -55,52 +55,7 @@ VS Code ships with built-in agents you can select from the agents dropdown:
 - **Plan** — generates implementation plans with read-only tools
 - **Explore** — fast codebase exploration and Q&A
 
-### Creating a Custom Agent
-
-**Option 1: Through the UI**
-
-1. In the Chat view, select the **gear icon** (Configure Chat) to open the Agent Customizations editor
-2. Select the **Agents** tab
-3. Click **New Agent (Workspace)** or **New Agent (User)** from the dropdown
-4. Fill in the YAML frontmatter and write your instructions in the body
-
-**Option 2: Generate with AI**
-
-Type `/create-agent` in the chat and describe the persona you want. Copilot will ask clarifying questions and generate the `.agent.md` file for you.
-
-**Option 3: Create the file manually**
-
-Create a file at `.github/agents/my-agent.agent.md` in your workspace:
-
-```markdown
----
-description: Reviews code for security vulnerabilities and best practices
-tools:
-  - search
-  - readFile
-  - listFiles
----
-
-# Security Reviewer
-
-You are a senior security engineer performing code reviews.
-
-## What to Check
-- SQL injection and XSS vulnerabilities
-- Hardcoded credentials or secrets
-- Missing input validation
-- Authentication/authorization issues
-
-## Response Format
-1. **Critical** — must fix before merge
-2. **Warning** — should address
-3. **Suggestion** — nice to have
-4. **Positive** — what's done well
-```
-
-### Using the Agent
-
-Select your custom agent from the **agents dropdown** in the Chat view. All your messages in that session will use the agent's instructions and tool restrictions.
+See the [exercise](exercise.md) for step-by-step instructions on creating and using agents in VS Code and Copilot CLI.
 
 ---
 
@@ -109,44 +64,6 @@ Select your custom agent from the **agents dropdown** in the Chat view. All your
 ### What's Built-In
 
 Copilot CLI runs in interactive mode with access to the same agent format. It includes default agents for general tasks, and custom agents run as **subagents** — temporary agents with their own context window that handle delegated work.
-
-### Creating a Custom Agent
-
-**Option 1: Through the CLI wizard**
-
-1. Start Copilot CLI in interactive mode
-2. Type `/agent`
-3. Select **Create new agent**
-4. Choose where to store it:
-   - **Project** (`.github/agents/`) — shared with your team
-   - **User** (`~/.copilot/agents/`) — personal across all repos
-5. Either let Copilot generate the agent from a description, or fill in name/description/instructions manually
-6. Choose which tools the agent should have access to
-7. Restart the CLI to load the new agent
-
-**Option 2: Create the file manually**
-
-Create the same `.agent.md` file as shown above — the CLI reads from the same locations (`.github/agents/` and `~/.copilot/agents/`).
-
-### Using the Agent
-
-Custom agents can be invoked in four ways:
-
-```bash
-# 1. Slash command — interactive selection
-/agent
-
-# 2. Explicit instruction in your prompt
-Use the security-reviewer agent on all files in /src
-
-# 3. By inference — Copilot picks the agent based on your prompt
-Check all TypeScript files for security problems
-
-# 4. Programmatically — specify the agent by name
-copilot --agent security-reviewer --prompt "Check /src/app/validator.go"
-```
-
-The programmatic mode (`--agent`) is especially useful for scripting and CI/CD pipelines.
 
 ---
 

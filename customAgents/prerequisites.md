@@ -44,31 +44,28 @@ You should see your `@microsoft.com`-associated GitHub username listed.
 
 ---
 
-## Node.js 18+ (Required for Part 2)
+## Python 3.10+ (Required for Part 2)
 
-Install Node.js 18 or later. Verify your version:
+Install Python 3.10 or later. Verify your version:
 
 ```bash
-node --version
+python3 --version
 ```
 
 If you need to install or update:
 
-- **macOS/Linux (via nvm):**
+- **macOS (via Homebrew):**
   ```bash
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-  nvm install 18
-  nvm use 18
+  brew install python@3.12
   ```
-- **Windows (via nvm-windows):** Download from [nvm-windows releases](https://github.com/coreybutler/nvm-windows/releases), then:
-  ```powershell
-  nvm install 18
-  nvm use 18
+- **Linux (Debian/Ubuntu):**
+  ```bash
+  sudo apt update && sudo apt install python3 python3-pip python3-venv
   ```
-- **Direct download:** [https://nodejs.org/](https://nodejs.org/) — choose the LTS version
+- **Windows:** Download from [https://www.python.org/downloads/](https://www.python.org/downloads/) — check "Add Python to PATH" during installation
 
-npm is included with Node.js. Verify:
+Verify pip is available:
 
 ```bash
-npm --version
+pip3 --version
 ```
