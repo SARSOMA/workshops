@@ -38,7 +38,7 @@ So when you create a custom agent that says "You are a security reviewer — che
 
 This is also why custom agents can restrict which **tools** the model has access to. A documentation agent might only need file read/write, while a DevOps agent might need shell access and Git. Limiting tools keeps the agent focused and reduces the chance of unintended side effects.
 
-The key insight: **you're not changing what the model knows — you're changing what it pays attention to.**
+The key insight: **you're not changing what the model knows — you're changing what it pays attention to.** (See the hello-world.agent.md as an example.)
 
 > **Sources:**
 > - [Customization concepts (VS Code docs)](https://code.visualstudio.com/docs/copilot/concepts/customization) — "AI models have broad general knowledge but don't know your codebase or team practices. Customization is how you share that context."
