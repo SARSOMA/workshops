@@ -57,6 +57,43 @@ VS Code and Copilot offer several customization options. Here's when you'd reach
 
 **Custom agents are the right choice when you want to change *who* the AI is**, not just what it knows or what task it's doing. An agent carries a persistent identity — its own instructions, a curated set of tools, and optionally a specific model. It can also delegate to other agents, enabling multi-step workflows where different specialists handle different parts of a task.
 
+### Sub-Agents: Delegation and Composition
+
+One of the most powerful features of custom agents is the ability to **call other agents as sub-agents**. Instead of building one monolithic agent that does everything, you can compose small, focused agents that delegate to each other — each with its own tools and least-privilege boundaries.
+
+#### Why Sub-Agents Matter
+
+- **Context saving** - Each agent gets their own context window, so only necessary context is on each context window.
+- **Least privilege** — Each agent only gets the tools it needs. A coordinating agent doesn't need file access if it delegates reading to a sub-agent.
+- **Separation of concerns** — One agent handles orchestration, another handles a specific task. Each is simpler and easier to maintain.
+- **Reusability** — A sub-agent can be called by multiple parent agents. Build it once, use it everywhere.
+- **Security boundaries** — Sensitive operations (reading secrets, calling APIs) can be isolated in a sub-agent with restricted tools, while the parent agent has no direct access to those resources.
+
+#### Example: `get-secret` and `sub-agent`
+
+This repo includes a working example of sub-agent delegation:
+
+#### How It Works
+
+```
+User → get-secret agent → sub-agent agent → reads secret-word.txt → returns "hello123"
+         (tool: agent)      (tool: read)
+```
+
+The user asks `get-secret` for the secret word. `get-secret` delegates to `sub-agent`, which reads the file and returns the value. The result flows back up the chain.
+
+#### When to Use Sub-Agents
+
+| Pattern | Example |
+|---------|----------|
+| **Privilege isolation** | A coordinator delegates to a reader agent that has file access |
+| **Multi-step workflows** | A release agent calls a changelog agent, then a PR agent |
+| **Shared capabilities** | Multiple agents delegate to a common "fetch ADO work item" agent |
+| **Different models** | A fast triage agent delegates complex analysis to an agent using a stronger model |
+
+> **Sources:**
+> - [Context Rot](https://eng.ms/docs/products/arm/rpaas/production-user-guide) — "Why you should try to save context."
+
 ## About This Workshop
 
 This is an **interactive, hands-on workshop**. Each section has a short information segment followed by a workshop exercise where you'll build something yourself. Come with questions — interrupt, ask, experiment.
