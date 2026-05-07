@@ -2,7 +2,7 @@
 
 In Part 1 you built a code reviewer with a markdown file. It worked — but you had no control over how the PR was fetched, couldn't enforce a structured output, and couldn't add custom logic. This exercise builds the same code reviewer as a Copilot Extension, showing where custom code adds value.
 
-**What this shows:** With a programmatic agent you control the entire pipeline — parse the PR URL, call the ADO API directly, shape the prompt, and enforce structured output.
+**What this shows:** With a programmatic agent you control the entire pipeline — parse the PR URL, call the ADO MCP server programmatically, shape the prompt, and enforce structured output.
 
 ---
 
@@ -12,10 +12,21 @@ In Part 1 you built a code reviewer with a markdown file. It worked — but you 
 mkdir code-review-extension && cd code-review-extension
 python -m venv .venv
 source .venv/bin/activate   # On Windows: .venv\Scripts\activate
-pip install flask requests
+pip install flask requests python-dotenv mcp
 ```
 
-### Step 2 — Write the agent
+### Step 2 — Create the `.env` file
+
+Create a `.env` file in your project directory to store configuration:
+
+```env
+ADO_PAT=your_ado_pat_here
+ADO_ORG=msazure
+```
+
+> **Tip:** Never commit `.env` to source control — add it to `.gitignore`. The PAT is passed to the ADO MCP server subprocess automatically via the process environment.
+
+### Step 3 — Write the agent
 
 Create `app.py`:
 
@@ -23,12 +34,18 @@ Create `app.py`:
 import json
 import os
 import re
+import asyncio
 import requests as http_client
 from flask import Flask, request, Response
+from dotenv import load_dotenv
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+load_dotenv()
 
 app = Flask(__name__)
 
-ADO_PAT = os.environ.get("ADO_PAT", "")
+ADO_ORG = os.environ.get("ADO_ORG", "msazure")
 
 
 # --- SSE helpers ---
@@ -46,7 +63,30 @@ def create_done_event() -> str:
     return sse_event("copilot_confirmation", {"type": "done"})
 
 
-# --- ADO helpers ---
+# --- ADO MCP helpers ---
+
+async def _call_ado_tool(tool_name: str, arguments: dict) -> str:
+    """Connect to the ADO MCP server and call a tool."""
+    server_params = StdioServerParameters(
+        command="npx",
+        args=["-y", "@azure-devops/mcp", ADO_ORG],
+        env={k: v for k, v in os.environ.items()},
+    )
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool(tool_name, arguments)
+            if result.isError:
+                raise RuntimeError(
+                    result.content[0].text if result.content else "Unknown MCP error"
+                )
+            return result.content[0].text
+
+
+def call_ado_tool(tool_name: str, arguments: dict) -> str:
+    """Synchronous wrapper around the async MCP tool call."""
+    return asyncio.run(_call_ado_tool(tool_name, arguments))
+
 
 def parse_ado_pr_url(text: str) -> dict | None:
     """Extract org, project, repo, and PR ID from an ADO pull request URL."""
@@ -62,28 +102,27 @@ def parse_ado_pr_url(text: str) -> dict | None:
     }
 
 
-def fetch_pr_details(org: str, project: str, repo: str, pr_id: int) -> dict:
-    """Fetch PR metadata from the ADO REST API."""
-    url = f"https://dev.azure.com/{org}/{project}/_apis/git/repositories/{repo}/pullrequests/{pr_id}?api-version=7.1"
-    resp = http_client.get(url, auth=("", ADO_PAT))
-    resp.raise_for_status()
-    return resp.json()
+def fetch_pr_details(project: str, repo: str, pr_id: int) -> dict:
+    """Fetch PR metadata via the ADO MCP server."""
+    raw = call_ado_tool("repo_get_pull_request_by_id", {
+        "repositoryId": repo,
+        "pullRequestId": pr_id,
+        "project": project,
+        "includeChangedFiles": True,
+    })
+    return json.loads(raw)
 
 
-def fetch_pr_changes(org: str, project: str, repo: str, pr_id: int) -> list[dict]:
-    """Fetch the list of changed files from the latest iteration."""
-    url = f"https://dev.azure.com/{org}/{project}/_apis/git/repositories/{repo}/pullrequests/{pr_id}/iterations?api-version=7.1"
-    resp = http_client.get(url, auth=("", ADO_PAT))
-    resp.raise_for_status()
-    iterations = resp.json().get("value", [])
-    if not iterations:
-        return []
-
-    last_iteration = iterations[-1]["id"]
-    changes_url = f"https://dev.azure.com/{org}/{project}/_apis/git/repositories/{repo}/pullrequests/{pr_id}/iterations/{last_iteration}/changes?api-version=7.1"
-    resp = http_client.get(changes_url, auth=("", ADO_PAT))
-    resp.raise_for_status()
-    return resp.json().get("changeEntries", [])
+def fetch_pr_changes(project: str, repo: str, pr_id: int) -> list[dict]:
+    """Fetch changed files via the ADO MCP server."""
+    raw = call_ado_tool("repo_get_pull_request_changes", {
+        "repositoryId": repo,
+        "pullRequestId": pr_id,
+        "project": project,
+        "includeDiffs": False,
+    })
+    data = json.loads(raw)
+    return data.get("changes", data.get("changeEntries", []))
 
 
 REVIEW_SYSTEM_PROMPT = """You are a senior engineer performing a code review.
@@ -149,15 +188,15 @@ def handler():
 
         yield create_text_event(
             f"Fetching PR #{pr_info['pr_id']} from "
-            f"**{pr_info['org']}/{pr_info['project']}**...\n\n"
+            f"**{pr_info['org']}/{pr_info['project']}** via MCP...\n\n"
         )
 
-        # 2. Fetch PR details and changes from ADO API
+        # 2. Fetch PR details and changes via ADO MCP server
         try:
-            pr = fetch_pr_details(**pr_info)
-            changes = fetch_pr_changes(**pr_info)
+            pr = fetch_pr_details(pr_info["project"], pr_info["repo"], pr_info["pr_id"])
+            changes = fetch_pr_changes(pr_info["project"], pr_info["repo"], pr_info["pr_id"])
         except Exception as e:
-            yield create_text_event(f"Error fetching PR from ADO: {e}")
+            yield create_text_event(f"Error fetching PR via ADO MCP server: {e}")
             yield create_done_event()
             return
 
@@ -187,13 +226,13 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000)
 ```
 
-### Step 3 — Start the server
+### Step 4 — Start the server
 
 ```bash
-ADO_PAT=your_ado_pat_here python app.py
+python app.py
 ```
 
-### Step 4 — Get a public URL
+### Step 5 — Get a public URL
 
 **If using Codespaces:**
 1. In the Ports tab, right-click port 3000 → Port Visibility → Public
@@ -204,7 +243,7 @@ ADO_PAT=your_ado_pat_here python app.py
 ngrok http 3000
 ```
 
-### Step 5 — Create a GitHub App
+### Step 6 — Create a GitHub App
 
 1. Go to [github.com/settings/apps/new](https://github.com/settings/apps/new)
 2. Fill in:
@@ -215,13 +254,13 @@ ngrok http 3000
 4. Under **Where can this GitHub App be installed?**: select "Only on this account"
 5. Click **Create GitHub App**
 
-### Step 6 — Enable the Copilot Agent
+### Step 7 — Enable the Copilot Agent
 
 1. In your GitHub App settings, find **Copilot** in the sidebar
 2. Set **App type** to **Agent**
 3. Save
 
-### Step 7 — Install and test
+### Step 8 — Install and test
 
 1. Click **Install App** → install on your account
 2. In VS Code Copilot Chat, type `@code-review-extension` and paste a PR URL:
@@ -239,8 +278,8 @@ Both exercises built the same thing — an ADO code review agent. Here's how the
 | | Part 1: Markdown Agent | Part 2: Programmatic Agent |
 |---|---|---|
 | **Setup time** | ~2 minutes | ~20 minutes |
-| **Code required** | 0 lines — just markdown | ~120 lines of Python |
-| **ADO integration** | Via built-in MCP tools (agent calls them) | Direct API calls (you control exactly what's fetched) |
+| **Code required** | 0 lines — just markdown | ~150 lines of Python |
+| **ADO integration** | Via built-in MCP tools (agent calls them) | Via MCP Python SDK — same ADO MCP server, called programmatically |
 | **Review logic** | Model decides based on your instructions | You build the prompt — can add custom rules, context, or pre-processing |
 | **Output format** | Suggested in instructions, not enforced | You can parse, validate, or restructure the model's output before returning it |
 | **Error handling** | Model handles errors (may hallucinate) | You catch API errors and return clear messages |
