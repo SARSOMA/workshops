@@ -69,3 +69,74 @@ Verify pip is available:
 ```bash
 pip3 --version
 ```
+
+---
+
+## Node.js 18+ (Required for ADO MCP Server)
+
+The ADO MCP server runs via `npx`, which requires Node.js. Verify your version:
+
+```bash
+node --version
+```
+
+If you need to install:
+
+- **macOS (via Homebrew):**
+  ```bash
+  brew install node
+  ```
+- **Linux (Debian/Ubuntu):**
+  ```bash
+  curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+  sudo apt install -y nodejs
+  ```
+- **Windows:** Download from [https://nodejs.org/](https://nodejs.org/) — choose the LTS version
+
+Verify npm/npx are available:
+
+```bash
+npx --version
+```
+
+---
+
+## ADO MCP Server (Required for Part 1 Exercise)
+
+The Part 1 exercise uses the Azure DevOps MCP server so agents can fetch pull request data. You need to add it to your VS Code MCP configuration.
+
+### Step 1 — Add the MCP config
+
+Open (or create) `.vscode/mcp.json` in your workspace and add the `ado` server:
+
+```json
+{
+  "servers": {
+    "ado": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@azure-devops/mcp", "msazure"]
+    }
+  }
+}
+```
+
+The organization is `msazure` and the default project is `one` for all workshop participants.
+
+> **Note:** If you already have other MCP servers configured, just add the `"ado"` entry inside the existing `"servers"` object.
+
+### Step 2 — Authenticate with Azure DevOps
+
+The first time the MCP server runs, it will prompt you to authenticate. You can also pre-authenticate by running:
+
+```bash
+npx -y @azure-devops/mcp msazure
+```
+
+Follow the browser-based auth flow to sign in with your Microsoft account.
+
+### Step 3 — Verify in VS Code
+
+1. Open VS Code in your workspace
+2. Open Copilot Chat and type a message — the ADO MCP tools should now be available
+3. You can confirm by checking the tools list in the agent dropdown (gear icon → MCP Servers) or by asking an agent that has `ado/*` tools to list a PR

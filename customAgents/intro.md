@@ -112,13 +112,3 @@ Each part follows the same rhythm:
 3. **Build one together** — a simple custom agent you'll create and test live
 
 ---
-
-## Why I Recommend Having Both VS Code Copilot Chat and Copilot CLI
-
-You'll see me use both throughout this workshop, and I'd encourage you to have both set up. They have different strengths:
-
-- **VS Code Copilot Chat** has a rich UI — inline diffs, file references, one-click apply, and easy back-and-forth. It's best for **involved tasks** that need your guidance, manual input, or iterative refinement. When you need to steer the agent, review changes visually, or have a conversation, this is where you want to be.
-
-- **Copilot CLI** (or Agency) is best for **well-defined tasks** that probably don't need intervention. Write a clear prompt, let it run, come back when it's done. The key advantage: you can run **multiple CLI instances in parallel** — each in its own terminal, each working on a separate task independently. One can be writing tests, another refactoring a module, a third generating documentation — all at the same time.
-
-The workflow I use: kick off CLI sessions with well-scoped tasks (if I have multiple to do), then work in VS Code Chat on whatever needs the most hands-on attention.

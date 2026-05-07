@@ -8,7 +8,7 @@ In this exercise you'll build a code review agent using a `.agent.md` file. The 
 
 ## Step 1 — Create the agent file
 
-Create `.github/agents/code-reviewer.agent.md` in your workspace:
+Create `.github/agents/code-reviewer.agent.md` in this repo:
 
 ~~~markdown
 ---

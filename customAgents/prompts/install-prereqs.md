@@ -5,3 +5,7 @@ I will confirm for myself that vscode copilot chat is configured.
 Choose the setup instructions for github copilot CLI instead of agency.
 
 For Python, check if python3 is already installed and at version 3.10+. If it is, just confirm the version. If not, install it using the appropriate method for my OS.
+
+For Node.js, check if node is already installed and at version 18+. If it is, just confirm the version. If not, install it using the appropriate method for my OS.
+
+For the ADO MCP server, create or update `.vscode/mcp.json` in my workspace with the ado server config. Use organization `msazure` — do not ask, this is the same for all participants.
