@@ -1,10 +1,11 @@
 # Part 2: Programmatic Custom Agents (GitHub Copilot Extensions SDK)
 
-Part 1 covered markdown-based agents — static instruction files that steer the model. This part goes deeper: **Copilot Extensions** let you build a fully programmable agent that runs as a web service. Instead of injecting instructions into a system prompt, you intercept every message from the user and respond with exactly what your code produces.
+Part 1 covered markdown-based agents — static instruction files that steer the model. This part goes deeper: **Copilot SDK** let you build a fully programmable agent. This brings the power of calling agentic AI from inside your own code.
 
 This unlocks things that `.agent.md` files can't do:
-- Query live databases, APIs, or internal services
+- Ability to package agentic AI execution into an executable or pipeline
 - Run custom logic before and after calling the model
+- Query live databases, APIs, or internal services
 - Return structured data like citations, confirmations, and rich references
 - Distribute your agent to others via GitHub Marketplace or your org
 
@@ -25,10 +26,10 @@ You write a standard HTTP server. Copilot calls it.
 
 ```
 ┌────────────────────────┐       POST /       ┌─────────────────────────┐
-│  GitHub Copilot Chat   │ ──────────────────► │  Your Extension Server  │
-│  (VS Code, github.com) │                     │  (Python HTTP server)   │
+│  GitHub Copilot Chat   │ ──────────────────► │  Your Copilot SDK App   │
+│  (VS Code, github.com) │                     │                         │
 │                        │ ◄────────────────── │                         │
-│                        │    SSE stream        │  • Verify request       │
+│                        │    SSE stream        │                         │
 └────────────────────────┘                     │  • Parse payload        │
                                                │  • Call your APIs       │
                                                │  • Call Copilot model   │
@@ -49,13 +50,32 @@ Use the Copilot Extensions SDK when you need:
 
 | Need | Why SDK > `.agent.md` |
 |------|-----------------------|
-| Live data (APIs, databases) | `.agent.md` only has static instructions; SDK can call any service at runtime |
 | Custom response logic | SDK can transform, filter, or enrich responses before showing them |
+| Live data (APIs, databases) | `.agent.md` only has static instructions; SDK can call any service at runtime |
 | Team / org distribution | Publish to GitHub Marketplace or install org-wide as a GitHub App |
-| Rich UI elements | SDK can send confirmations, citations, and reference cards the model can't generate on its own |
 | Multi-step workflows with checkpoints | SDK has full control over the conversation loop |
 
-If you just need a specialized persona with restricted tools, use `.agent.md`. If you need to integrate with external systems or distribute to others, use the SDK.
+If you just need a specialized persona with restricted tools, use `.agent.md`. If you need to integrate with external systems or distribute to others, use the SDK..
+
+---
+
+## Demos
+
+**hello_world.py** — calls the Copilot model with a system prompt and prints the response:
+
+```bash
+set -a && source customAgents/sdk/.env && set +a
+python customAgents/sdk/hello_world.py
+```
+
+**code-review-script** — reviews an ADO pull request and posts comments:
+
+```bash
+set -a && source .env && set +a
+python review_pr.py https://dev.azure.com/msazure/one/_git/my-repo/pullrequest/12345
+```
+
+**code-review-script from ADO Pipeline** — reviews an ADO pull request and posts comments, but from a pipeline
 
 ---
 
@@ -63,9 +83,6 @@ If you just need a specialized persona with restricted tools, use `.agent.md`. I
 
 - Python 3.10 or later
 - A GitHub account with Copilot Chat access
-- A public HTTPS URL for your server — use one of:
-  - **GitHub Codespaces** (easiest — ports can be made public with one click)
-  - **ngrok** (`ngrok http 3000`) for local development
 
 ---
 
@@ -77,10 +94,8 @@ See the [exercise](exercise.md) for the full hands-on walkthrough of building an
 
 ## Key Takeaways
 
-- **Copilot Extensions = a GitHub App + an HTTP webhook endpoint** — Copilot calls your server, your server responds with SSE
-- **The protocol is language-agnostic** — the exercise uses Python + Flask, but any language that can serve HTTP and stream SSE works
+- **The protocol is language-agnostic** — the exercise uses Python, but any language that can work
 - **Always verify requests** in production — check the GitHub signature before trusting any payload
-- **Use Codespaces or ngrok** to get a public URL during development
 - **For production**, deploy your server anywhere (Azure, AWS, etc.) and update the webhook URL in your GitHub App settings
 
 ---
