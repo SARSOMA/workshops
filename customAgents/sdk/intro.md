@@ -59,6 +59,69 @@ If you just need a specialized persona with restricted tools, use `.agent.md`. I
 
 ---
 
+## Scenarios for copilot SDK
+
+Here are concrete scenarios where the Copilot SDK is the right tool — situations where a markdown agent or a prompt file can't reach.
+
+### 1. Automated PR review in CI / pipeline
+
+A pull-request build step runs a Python script built on the SDK. It:
+
+- Pulls the PR diff from ADO / GitHub
+- Sends each changed file to the Copilot model with a system prompt tailored to your team (security rules, style guide, common bug patterns)
+- Posts findings as inline PR comments — gated by severity
+
+**Why SDK:** This is non-interactive — there's no human typing into Chat. The SDK lets you embed the model call inside a normal script that runs in your pipeline, with retries, logging, and structured output. See `code-review-script/review_pr.py` for a working example.
+
+### 2. Custom data source integration (live APIs, internal services)
+
+You want a Copilot extension that can answer "what's the SLA status of service X?" by querying your internal monitoring API where X can change dynamically. A `.agent.md` file can't change its system prompt dynamically; an SDK extension can:
+
+- Receive the user's question via the Copilot webhook
+- Authenticate to your internal API using a service principal
+- Format the live data as Markdown and stream it back to Chat
+
+**Why SDK:** The agent's response is *grounded in real-time data*, not stale training data or static instructions.
+
+### 3. Scheduled / batch agent runs
+
+You want an agent that runs every night to:
+
+- Scan all open PRs in your repo for staleness
+- Summarize them
+- Post a digest to a Teams channel
+
+There's no user typing — it's a cron job. The SDK turns the model into a callable function inside a normal scheduled script.
+
+**Why SDK:** No interactive Chat surface needed. Just `python nightly_digest.py` in a pipeline schedule.
+
+### 4. Org-wide GitHub App extension
+
+You publish `@security-bot` as a GitHub App. Anyone in your org can `@security-bot review` in Copilot Chat on github.com and your server:
+
+- Verifies the webhook signature
+- Looks up the user's repo and team policies
+- Runs a threat-model-aware review
+- Streams results back as SSE
+
+**Why SDK:** This is the *only* way to ship an extension that works on github.com (not just inside one developer's VS Code). The SDK is the contract between Copilot Chat and your server.
+
+### 5. Bridging Copilot to other chat surfaces (Teams, Slack)
+
+A Teams bot relays messages to the Copilot model via the SDK, then formats responses as Adaptive Cards. Your users get Copilot's intelligence inside the chat tool they already live in.
+
+**Why SDK:** The model becomes a backend dependency you can call from anywhere — Teams, Slack, a web app, a mobile app — not just Copilot Chat.
+
+### Summary:
+
+Copilot SDK should be used instead of markdown files when:
+- AI agent needs to be ran programatically/in a pipeline without user intervension.
+- System prompt may change dynamically.
+- Product utilizes LLM logic internally in the backend.
+- Input/output needs to be processed programatically before or after LLM logic. For example, if the output is a call to teams api, that is easier to do by code.
+
+---
+
 ## Demos
 
 **hello_world.py** — calls the Copilot model with a system prompt and prints the response:

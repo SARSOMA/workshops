@@ -57,6 +57,10 @@ VS Code and Copilot offer several customization options. Here's when you'd reach
 
 **Custom agents are the right choice when you want to change *who* the AI is**, not just what it knows or what task it's doing. An agent carries a persistent identity — its own instructions, a curated set of tools, and optionally a specific model. It can also delegate to other agents, enabling multi-step workflows where different specialists handle different parts of a task.
 
+### Example: Squad
+
+https://github.com/bradygaster/squad: A multi-agent AI tool where you have a whole team of experts (frontend, backend, tester, lead) to provide separation of contexts that allow only code itself to be developed with scrutany.
+
 ### Sub-Agents: Delegation and Composition
 
 One of the most powerful features of custom agents is the ability to **call other agents as sub-agents**. Instead of building one monolithic agent that does everything, you can compose small, focused agents that delegate to each other — each with its own tools and least-privilege boundaries.
@@ -90,6 +94,71 @@ The user asks `get-secret` for the secret word. `get-secret` delegates to `sub-a
 | **Multi-step workflows** | A release agent calls a changelog agent, then a PR agent |
 | **Shared capabilities** | Multiple agents delegate to a common "fetch ADO work item" agent |
 | **Different models** | A fast triage agent delegates complex analysis to an agent using a stronger model |
+
+#### Scenarios
+
+Here are concrete, in-depth scenarios where sub-agents shine. Each one shows *why* the work is better split across agents rather than crammed into one.
+
+##### 1. Build / Run / Diagnose loop in a development agent
+
+A development agent is iterating on a fix. Instead of running builds itself and burning its context window on thousands of lines of compiler output, it delegates to a **build-runner** sub-agent.
+
+```
+dev-agent
+  ├── (writes code change)
+  └── build-runner sub-agent
+        ├── tools: shell, read
+        ├── runs: `cargo build`, `cargo run`, tails logs
+        ├── parses stdout/stderr, extracts errors + first failing line
+        └── returns: { status: "fail", error: "borrow of moved value at src/foo.rs:42" }
+```
+
+**Why split it:** The build output might be 5,000 lines. The dev agent only needs the summarized failure. The sub-agent absorbs the noisy context, returns a clean signal, and the dev agent stays focused on the fix. Repeat the loop 10 times in one session without polluting the parent's context.
+
+##### 2. Test triage with language-specific runners
+
+A `run-tests` parent agent receives a request to validate a change. It dispatches to specialized sub-agents based on the project:
+
+- `pytest-runner` — runs `pytest`, parses JUnit XML, returns failures with stack traces
+- `cargo-test-runner` — runs `cargo test`, parses output, classifies failures (panic vs. assertion vs. timeout)
+- `go-test-runner` — runs `go test ./...`, summarizes flaky vs. genuinely failing tests
+
+**Why split it:** Each runner knows the quirks of its toolchain (e.g., interpreting `thread 'main' panicked at` for Rust, or detecting cached test runs in Go). The parent agent only knows "ask the right runner and merge results."
+
+##### 3. Log analysis on a long-running service
+
+A `debug-prod-issue` agent investigates a customer report. It calls a `log-analyzer` sub-agent that:
+
+- Queries Kusto / Loki / Splunk with a time range
+- Filters to ERROR / WARN
+- Clusters similar messages and returns the top 5 patterns with counts
+
+**Why split it:** Production logs can be gigabytes. Pulling them into the parent's context is impossible. The sub-agent does the heavy lifting in its own short-lived context and returns a few hundred tokens of structured summary.
+
+##### 4. PR review with a panel of specialists
+
+A `review-pr` agent fans out to multiple sub-agents in parallel:
+
+- `security-reviewer` — checks for injection, hardcoded secrets, unsafe deserialization
+- `perf-reviewer` — flags N+1 queries, blocking I/O on hot paths
+- `style-reviewer` — checks naming, formatting, doc coverage against team conventions
+- `test-coverage-reviewer` — verifies new code has tests
+
+The parent agent collects each verdict and posts a single consolidated review.
+
+**Why split it:** Each reviewer has a focused persona and a narrow set of rules. A monolithic reviewer tends to drift — security findings get diluted by style nits. Separate agents give crisp, comparable output, and you can swap in a stronger model for the security one alone.
+
+##### 5. Cost-optimized triage funnel
+
+A high-volume `incident-triage` agent runs on a cheap, fast model. When it detects something complex (multi-service outage, unfamiliar stack trace), it delegates to a `deep-analysis` sub-agent that uses a stronger model (e.g., Claude Opus or GPT-5).
+
+**Why split it:** 95% of incidents are routine. Running the strong model on all of them is wasteful. Sub-agent delegation gives you a tiered system: fast and cheap by default, slow and smart on demand.
+
+##### 6. Documentation lookup with bounded tool access
+
+A coding agent needs to look up an internal API. It delegates to a `docs-lookup` sub-agent that has access to the eng.ms / Confluence / SharePoint search tools, but **no** code-writing or shell tools.
+
+**Why split it:** The lookup agent can never accidentally edit your code or run a command. The coding agent gets a clean answer ("the API is `POST /v2/resources` with body `{...}`") without ever touching the docs tools directly.
 
 > **Sources:**
 > - [Context Rot](https://eng.ms/docs/products/arm/rpaas/production-user-guide) — "Why you should try to save context."
