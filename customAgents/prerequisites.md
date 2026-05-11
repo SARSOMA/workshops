@@ -70,6 +70,12 @@ Verify pip is available:
 pip3 --version
 ```
 
+Install the required Python packages:
+
+```bash
+pip install mcp github-copilot-sdk
+```
+
 ---
 
 ## Node.js 18+ (Required for ADO MCP Server)

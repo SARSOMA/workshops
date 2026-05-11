@@ -12,7 +12,6 @@ In Part 1 you built a code reviewer with a markdown file. It worked — but you 
 mkdir code-review-script && cd code-review-script
 python -m venv .venv
 source .venv/bin/activate   # On Windows: .venv\Scripts\activate
-pip install mcp github-copilot-sdk
 ```
 
 ### Step 2 — Create the `.env` file
