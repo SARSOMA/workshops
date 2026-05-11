@@ -74,10 +74,7 @@ End with a brief summary: approve, request changes, or needs discussion.
 # Interactive — select the code-reviewer agent
 /agent
 
-# Or by inference — Copilot picks the agent based on your prompt
-Review the PR at https://dev.azure.com/your-org/your-project/_git/your-repo/pullrequest/12345
-
-# Or programmatically
+# Use code-reviewer agent to review a PR
 copilot --agent code-reviewer --prompt "Review https://dev.azure.com/your-org/your-project/_git/your-repo/pullrequest/12345"
 ```
 

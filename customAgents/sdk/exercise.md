@@ -12,7 +12,7 @@ In Part 1 you built a code reviewer with a markdown file. It worked — but you 
 mkdir code-review-script && cd code-review-script
 python -m venv .venv
 source .venv/bin/activate   # On Windows: .venv\Scripts\activate
-pip install requests mcp
+pip install mcp github-copilot-sdk
 ```
 
 ### Step 2 — Create the `.env` file
@@ -20,11 +20,18 @@ pip install requests mcp
 Create a `.env` file in your project directory to store configuration:
 
 ```env
-GITHUB_TOKEN=ghp_your_github_pat_here
 ADO_ORG=msazure
+ADO_AUTH_MODE=interactive
 ```
 
+**Auth mode options** (`ADO_AUTH_MODE`):
+- `interactive` *(default)* — browser login prompt, works in local development
+- `pat` — non-interactive PAT auth; also set `PERSONAL_ACCESS_TOKEN=base64('<email>:<pat>')`
+- `envvar` — bearer token auth; also set `ADO_MCP_AUTH_TOKEN=<System.AccessToken>`
+
 > **Tip:** Never commit `.env` to source control.
+> The Copilot SDK reuses your local GitHub Copilot authentication (via the
+> Copilot CLI / VS Code session), so no `GITHUB_TOKEN` is needed.
 
 To load these variables into your shell before running:
 
@@ -52,12 +59,20 @@ import os
 import re
 import sys
 import asyncio
-import requests as http_client
+from contextlib import AsyncExitStack
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from copilot import (
+    CopilotClient,
+    SessionConfig,
+    MessageOptions,
+    PermissionHandler,
+)
 
-COPILOT_API_URL = "https://api.githubcopilot.com/chat/completions"
 ADO_ORG = os.environ.get("ADO_ORG", "msazure")
+# Auth mode for the ADO MCP server: "envvar" (bearer token via ADO_MCP_AUTH_TOKEN),
+# "pat" (PAT via PERSONAL_ACCESS_TOKEN), or "interactive" (browser login).
+ADO_AUTH_MODE = os.environ.get("ADO_AUTH_MODE", "interactive")
 
 
 # --- ADO MCP helpers ---
@@ -72,7 +87,8 @@ class AdoMcpClient:
         if self._session is None:
             server_params = StdioServerParameters(
                 command="npx",
-                args=["-y", "@azure-devops/mcp", ADO_ORG],
+                args=["-y", "@azure-devops/mcp", ADO_ORG,
+                      "--authentication", ADO_AUTH_MODE],
                 env={k: v for k, v in os.environ.items()},
             )
             read, write = await stack.enter_async_context(
@@ -107,7 +123,7 @@ def parse_ado_pr_url(url: str) -> dict | None:
     }
 
 
-# --- Copilot model ---
+# --- Copilot model (via Copilot SDK) ---
 
 REVIEW_SYSTEM_PROMPT = """\
 You are a senior engineer performing a code review.
@@ -132,27 +148,23 @@ Rules:
 SEVERITY_ICONS = {"critical": "🔴", "warning": "🟡", "suggestion": "🟢"}
 
 
-def call_copilot_model(system_prompt: str, user_prompt: str, token: str) -> str:
-    """Send a prompt to the Copilot model and return the response."""
-    resp = http_client.post(
-        COPILOT_API_URL,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Copilot-Integration-Id": "vscode-chat",
-        },
-        json={
-            "model": "gpt-4o",
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        },
-    )
-    if resp.status_code != 200:
-        print(f"Copilot API error ({resp.status_code}): {resp.text}", file=sys.stderr)
-        sys.exit(1)
-    return resp.json()["choices"][0]["message"]["content"]
+async def call_copilot_model(system_prompt: str, user_prompt: str) -> str:
+    """Send a prompt to Copilot via the Copilot SDK and return the response."""
+    client = CopilotClient()
+    await client.start()
+    try:
+        session = await client.create_session(SessionConfig(
+            model="gpt-5",
+            system_message={"content": system_prompt},
+            on_permission_request=PermissionHandler.approve_all,
+        ))
+        response = await session.send_and_wait(MessageOptions(prompt=user_prompt))
+        await session.destroy()
+        if not response:
+            raise RuntimeError("Copilot SDK returned no response")
+        return response.data.content
+    finally:
+        await client.stop()
 
 
 def parse_review_json(raw: str) -> dict:
@@ -193,11 +205,6 @@ async def async_main():
         print("Usage: python review_pr.py <ADO_PR_URL>", file=sys.stderr)
         sys.exit(1)
 
-    token = os.environ.get("GITHUB_TOKEN")
-    if not token:
-        print("Error: GITHUB_TOKEN environment variable is not set.", file=sys.stderr)
-        sys.exit(1)
-
     pr_info = parse_ado_pr_url(sys.argv[1])
     if not pr_info:
         print("Error: Could not parse ADO PR URL.", file=sys.stderr)
@@ -207,10 +214,24 @@ async def async_main():
         )
         sys.exit(1)
 
+    # Validate ADO auth credentials based on the selected auth mode
+    if ADO_AUTH_MODE == "envvar" and not os.environ.get("ADO_MCP_AUTH_TOKEN"):
+        print(
+            "Error: ADO_MCP_AUTH_TOKEN environment variable is not set.\n"
+            "Required when ADO_AUTH_MODE=envvar. Set it to a bearer token (e.g. System.AccessToken).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    elif ADO_AUTH_MODE == "pat" and not os.environ.get("PERSONAL_ACCESS_TOKEN"):
+        print(
+            "Error: PERSONAL_ACCESS_TOKEN environment variable is not set.\n"
+            "Required when ADO_AUTH_MODE=pat. Set it to base64('<email>:<pat>').",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     project, repo, pr_id = pr_info["project"], pr_info["repo"], pr_info["pr_id"]
     ado = AdoMcpClient()
-
-    from contextlib import AsyncExitStack
 
     async with AsyncExitStack() as stack:
         # 1. Fetch PR metadata
@@ -253,9 +274,9 @@ async def async_main():
             + "\n".join(diff_sections)
         )
 
-        # 4. Generate structured review
+        # 4. Generate structured review via the Copilot SDK
         print("Generating review...\n")
-        raw_review = call_copilot_model(REVIEW_SYSTEM_PROMPT, review_prompt, token)
+        raw_review = await call_copilot_model(REVIEW_SYSTEM_PROMPT, review_prompt)
 
         try:
             review = parse_review_json(raw_review)
