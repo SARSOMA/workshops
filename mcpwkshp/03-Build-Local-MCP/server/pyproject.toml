@@ -1,0 +1,12 @@
+[project]
+name = "repo-doctor"
+version = "0.1.0"
+description = "An MCP server that diagnoses the health of a local repo."
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
