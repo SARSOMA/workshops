@@ -161,4 +161,5 @@ D) Anonymous access to ARM
 
 ## Next
 
+→ [4.4 — Auth deep-dive: incoming vs outgoing, OAuth 2.1, OBO](./04-auth-deep-dive.md)
 → [§5 — Wrap-up](../05-Wrap-Up/README.md)
