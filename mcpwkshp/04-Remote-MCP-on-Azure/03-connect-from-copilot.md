@@ -23,7 +23,14 @@ That's it. No command, no stdio — just a URL.
 > The URL is the FQDN root (`/`), **not** `/mcp`. Hitting `/mcp` returns 404.
 > If you wired this up before and it failed silently, this is almost certainly why.
 
-> If you have a production deployment with Entra auth on the inbound (i.e., you removed `--dangerously-disable-http-incoming-auth`), you'd also include the appropriate `Authorization` header. We're skipping that for the demo.
+> ### ⚠️ Demo only — no `Authorization` header here
+>
+> This config works because the server was deployed with
+> `--dangerously-disable-http-incoming-auth`. **In production you must remove
+> that flag, register an Entra app, and pass an `Authorization: Bearer <token>`
+> header** (Copilot CLI handles the OAuth 2.1 + PKCE flow automatically once the
+> server advertises the protected-resource metadata).
+> See [§4.5 — Auth deep dive](./05-auth-deep-dive.md) for the production walkthrough.
 
 ---
 

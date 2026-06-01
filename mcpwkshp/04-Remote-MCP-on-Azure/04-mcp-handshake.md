@@ -1,5 +1,10 @@
 # 4.4 — The MCP handshake, on the wire
 
+> ⚠️ The traces on this page use the **demo deployment** (incoming auth
+> disabled). In a production deployment, every request below would also carry
+> an `Authorization: Bearer <entra-token>` header. The protocol body is
+> identical — only the headers differ. See [§4.5 — Auth deep dive](./05-auth-deep-dive.md).
+
 You've seen Copilot CLI call your remote server in §4.3. Now let's pop the hood
 and watch the **actual HTTP/JSON-RPC traffic** Copilot CLI sends. This is the
 "there's no magic here" page.
