@@ -4,11 +4,13 @@
 
 ## Concept
 
-Our server speaks stdio. To make Copilot CLI launch it, we add an entry to:
+Our server speaks stdio. To make Copilot CLI launch it, we add an entry to its
+MCP config file:
 
-```
-~/.copilot/mcp-config.json
-```
+| OS | Path |
+|---|---|
+| macOS / Linux | `~/.copilot/mcp-config.json` |
+| Windows | `%USERPROFILE%\.copilot\mcp-config.json` |
 
 Copilot CLI will spawn the command we specify, hand it stdio, and connect.
 
@@ -19,7 +21,11 @@ Copilot CLI will spawn the command we specify, hand it stdio, and connect.
 └────────────────────┘     JSON-RPC       └──────────────────────┘
 ```
 
-You can edit `mcp-config.json` by hand, or use the built-in wizard. We'll do both, so you know what the wizard writes.
+You can edit the config by hand, or use the built-in wizard. We'll do both, so
+you know what the wizard writes.
+
+> 🔬 **Want to see the actual JSON-RPC messages** that flow over that arrow?
+> §4.4 (*The MCP handshake, on the wire*) walks through them line by line.
 
 ---
 
@@ -70,9 +76,11 @@ Fill in:
 
 Press **Ctrl+S** (or **Cmd+S** on macOS) to save.
 
-### Step 2 — Option B: edit `mcp-config.json` by hand
+### Step 2 — Option B: edit the config file by hand
 
-Open `~/.copilot/mcp-config.json` and add a `repo-doctor` entry under `mcpServers`:
+Open the MCP config file (`~/.copilot/mcp-config.json` on macOS/Linux, or
+`%USERPROFILE%\.copilot\mcp-config.json` on Windows) and add a `repo-doctor`
+entry under `mcpServers`:
 
 ```json
 {
@@ -107,13 +115,17 @@ Restart Copilot CLI (exit and run `copilot` again). Then:
 /mcp
 ```
 
-You should see `repo-doctor` listed alongside any other servers. If not, run:
+You should see `repo-doctor` listed alongside any other servers, with a green
+status indicator. A healthy entry looks like:
 
 ```
-/mcp help
+MCP servers
+  repo-doctor          ✓ Ready    5 tools
+  …your other servers…
 ```
 
-…and double-check the path and command.
+If `repo-doctor` shows ✗ / `Connection closed` or is missing entirely, jump to
+the **Troubleshooting** section below.
 
 ### Step 4 — Drive it from natural language
 
@@ -166,11 +178,11 @@ You'll see one of:
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| `repo-doctor` not in `/mcp` | Restart Copilot CLI; check `~/.copilot/mcp-config.json` is valid JSON |
+| `repo-doctor` not in `/mcp` | Restart Copilot CLI; check that the MCP config file is valid JSON (no trailing commas) |
 | Copilot CLI still says `Connection closed` after installing uv | You didn't restart Copilot CLI in a fresh shell that sees the new PATH. Quit, open a new terminal, run `copilot` again. |
-| "command not found: uv" but `uv --version` works in your shell | Copilot CLI was launched from a session before `uv` was installed. Use the **absolute path** to `uv` (e.g., `C:\Users\<you>\.local\bin\uv.exe`) in `command:`. |
+| "command not found: uv" but `uv --version` works in your shell | Copilot CLI was launched from a session before `uv` was installed. Use the **absolute path** to `uv` (e.g., `C:\Users\<you>\.local\bin\uv.exe` on Windows, `/Users/<you>/.local/bin/uv` on macOS) in `command:`. |
 | Tools listed but call hangs | Open the Inspector (`uv run mcp dev server.py`) and reproduce — likely a Python exception inside a tool. Logs print to stderr. |
-| `run_build` times out at 120s on Windows with `python -m compileall` | Bare `"python"` from PATH resolved to the Microsoft Store stub (`%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe`), which can hang when stdin/stdout are piped. The reference `server.py` already avoids this by invoking `sys.executable` instead of `"python"`. If you typed your own version, mirror that change. To verify the stub is the culprit: `Get-Command python` — if `Source` is under `WindowsApps`, that's the stub. |
+| `run_build` times out at 120s on Windows with `python -m compileall` | Bare `"python"` from PATH resolved to the Microsoft Store stub (`%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe`), which can hang when stdin/stdout are piped. The reference `server.py` avoids this by invoking `sys.executable` instead of `"python"`. If you typed your own version, mirror that change. To verify the stub is the culprit: `Get-Command python` — if `Source` is under `WindowsApps`, that's the stub. |
 | `run_lint` / `run_tests` say "not on PATH" after `uv tool install ruff pytest` | `uv tool install` drops binaries in `~/.local/bin`, which isn't on PATH by default. Run `uv tool update-shell`, then **close every terminal and Copilot CLI session** so the new PATH is inherited. |
 
 ---
@@ -207,7 +219,7 @@ You now have a real MCP server that's useful, opinionated, and ~250 lines of Pyt
 ## Q&A
 
 ### Question 1
-After editing `~/.copilot/mcp-config.json` you don't see `repo-doctor` in `/mcp`. What's the first thing to do?
+After editing the MCP config file you don't see `repo-doctor` in `/mcp`. What's the first thing to do?
 
 A) Reboot
 B) Restart Copilot CLI — it loads MCP config on startup
@@ -216,7 +228,7 @@ D) Run `uv pip install` again
 
 <details><summary>Answer</summary>
 
-**B.** Copilot CLI reads `mcp-config.json` when it starts. Quit and relaunch.
+**B.** Copilot CLI reads the MCP config when it starts. Quit and relaunch.
 
 </details>
 
@@ -238,6 +250,16 @@ D) Stylistic preference
 
 ## Next
 
-You earned the break. ☕  See you in §4 for the remote MCP demo on Azure.
+You earned the break. ☕
+
+Up next: **[§4 — Remote MCP on Azure](../04-Remote-MCP-on-Azure/README.md)** —
+take the same JSON-RPC protocol, swap stdio for HTTP, and host it as a
+Container App.
+
+> 🔬 **Curious what just flowed over that stdio pipe?**
+> [§4.4 — The MCP handshake](../04-Remote-MCP-on-Azure/04-mcp-handshake.md) walks
+> through `initialize` → `tools/list` → `tools/call` byte-by-byte. The
+> protocol is identical to what your local server just spoke; only the
+> transport changes.
 
 → [§4 — Remote MCP on Azure](../04-Remote-MCP-on-Azure/README.md)

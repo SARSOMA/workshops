@@ -31,32 +31,51 @@ We'll bake this in.
 
 ## Practice
 
-Replace `server.py` with the version below. We'll go through it in pieces — but it's all in one file so you can copy it as one block.
+Replace `server.py` with the version below — this is the same code as the
+reference implementation under [`server/server.py`](./server/). It's all in one
+file so you can copy it as one block.
+
+> 📁 If you'd rather just *use* the working server and skip ahead to wiring it
+> into Copilot CLI, you can — see the **Quick start** in the [README](./README.md).
+> The walk-through below is for attendees building it themselves.
 
 ### The full file
 
 ```python
 # server.py
+"""Repo Doctor — an MCP server that diagnoses the health of a local repo."""
 from __future__ import annotations
 
-import json
+import os
 import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("repo-doctor")
 
-# ---------- helpers ----------
+# ---------- knobs ----------
 
-DEFAULT_TIMEOUT = 120  # seconds — never let a subprocess run forever
-MAX_OUTPUT_LINES = 40
+DEFAULT_TIMEOUT = 120       # seconds — never let a subprocess run forever
+MAX_OUTPUT_LINES = 40       # truncate so we don't burn LLM context
 MAX_OUTPUT_CHARS = 4000
 
+# Folders the python "build" step refuses to descend into. Vendored / cache
+# trees can dwarf the real source and blow the timeout.
+_BUILD_EXCLUDE_DIRS = {
+    ".venv", "venv", ".env", "env",
+    "__pycache__", ".git", ".hg", ".svn",
+    "node_modules", "site-packages",
+    ".tox", ".nox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    "dist", "build", ".eggs",
+}
+_BUILD_MAX_FILES = 500
+
+
+# ---------- helpers ----------
 
 def _truncate(text: str) -> str:
     """Trim subprocess output so we don't blow up the LLM context window."""
@@ -70,17 +89,15 @@ def _truncate(text: str) -> str:
 
 
 def _which(cmd: str) -> str | None:
-    """Locate an executable on PATH, falling back to well-known per-user
-    tool dirs (`~/.local/bin`). Returns the absolute path or None.
-
-    The fallback lets a freshly-installed `uv tool install ruff` work even
-    when the parent shell's PATH wasn't refreshed — a common Windows stumble.
+    """Like ``shutil.which`` but also searches ``~/.local/bin`` (where
+    ``uv tool install`` / ``pipx`` drop binaries). Lets a freshly-installed
+    tool work even when the parent shell's PATH wasn't refreshed — a common
+    Windows stumble after ``uv tool install``.
     """
     found = shutil.which(cmd)
     if found:
         return found
-    extra_dirs = [Path.home() / ".local" / "bin"]
-    for d in extra_dirs:
+    for d in [Path.home() / ".local" / "bin"]:
         for ext in ("", ".exe", ".cmd", ".bat"):
             candidate = d / f"{cmd}{ext}"
             if candidate.is_file():
@@ -101,6 +118,10 @@ def _run(cmd: list[str], cwd: Path) -> dict:
             capture_output=True,
             text=True,
             timeout=DEFAULT_TIMEOUT,
+            # Detach the child from the MCP server's stdio pipes. When this
+            # server runs over stdio, our stdin is a pipe from the MCP client;
+            # children inheriting it can hang on Windows.
+            stdin=subprocess.DEVNULL,
         )
         return {
             "ok": proc.returncode == 0,
@@ -120,7 +141,19 @@ def _resolve(path: str) -> Path:
     return p
 
 
-# ---------- stack detection ----------
+def _collect_python_sources(root: Path) -> list[str]:
+    """Walk `root` for .py files, skipping vendored / cache directories."""
+    sources: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _BUILD_EXCLUDE_DIRS]
+        for name in filenames:
+            if name.endswith(".py"):
+                rel = Path(dirpath, name).relative_to(root)
+                sources.append(str(rel))
+                if len(sources) >= _BUILD_MAX_FILES:
+                    return sources
+    return sources
+
 
 def _detect(path: Path) -> dict:
     stacks: list[str] = []
@@ -142,6 +175,8 @@ def _detect(path: Path) -> dict:
     return {"path": str(path), "stacks": stacks or ["unknown"]}
 
 
+# ---------- tools ----------
+
 @mcp.tool()
 def detect_stack(path: str = ".") -> dict:
     """Detect which ecosystem(s) a repo uses (node, python, rust, go, dotnet).
@@ -150,8 +185,6 @@ def detect_stack(path: str = ".") -> dict:
     """
     return _detect(_resolve(path))
 
-
-# ---------- lint ----------
 
 @mcp.tool()
 def run_lint(path: str = ".") -> dict:
@@ -164,6 +197,9 @@ def run_lint(path: str = ".") -> dict:
     stacks = _detect(p)["stacks"]
     if "python" in stacks and _which("ruff"):
         return _run(["ruff", "check", "."], p)
+    if "python" in stacks:
+        return {"ok": True, "skipped": True,
+                "reason": "python detected but `ruff` not on PATH — install with `uv tool install ruff`"}
     if "node" in stacks:
         return _run(["npm", "run", "lint", "--if-present"], p)
     if "rust" in stacks:
@@ -175,8 +211,6 @@ def run_lint(path: str = ".") -> dict:
     return {"ok": True, "skipped": True, "reason": f"no lint recipe for stacks={stacks}"}
 
 
-# ---------- tests ----------
-
 @mcp.tool()
 def run_tests(path: str = ".") -> dict:
     """Run the test suite for the repo at `path` and return a truncated summary."""
@@ -186,13 +220,13 @@ def run_tests(path: str = ".") -> dict:
         result = _run(["pytest", "-q", "--maxfail=5"], p)
         # pytest exit code 5 = "no tests collected" — treat as skipped, not failed.
         if result.get("exit_code") == 5:
-            return {
-                "ok": True,
-                "skipped": True,
-                "reason": "no tests collected (pytest exit 5)",
-                "command": result.get("command", ""),
-            }
+            return {"ok": True, "skipped": True,
+                    "reason": "no tests collected (pytest exit 5)",
+                    "command": result.get("command", "")}
         return result
+    if "python" in stacks:
+        return {"ok": True, "skipped": True,
+                "reason": "python detected but `pytest` not on PATH — install with `uv tool install pytest`"}
     if "node" in stacks:
         return _run(["npm", "test", "--if-present"], p)
     if "rust" in stacks:
@@ -203,8 +237,6 @@ def run_tests(path: str = ".") -> dict:
         return _run(["dotnet", "test", "--nologo", "--verbosity", "quiet"], p)
     return {"ok": True, "skipped": True, "reason": f"no test recipe for stacks={stacks}"}
 
-
-# ---------- build ----------
 
 @mcp.tool()
 def run_build(path: str = ".") -> dict:
@@ -220,20 +252,15 @@ def run_build(path: str = ".") -> dict:
     if "dotnet" in stacks and _which("dotnet"):
         return _run(["dotnet", "build", "--nologo", "--verbosity", "quiet"], p)
     if "python" in stacks:
-        # python "build" — just byte-compile as a smoke test, skipping
-        # vendored / cache dirs (.venv on Windows can dominate the timeout).
-        # We use sys.executable (the interpreter running this server) instead
-        # of bare "python" — on Windows, a bare "python" from PATH can resolve
-        # to the Microsoft Store stub, which hangs subprocess calls and trips
-        # the 120s timeout.
-        return _run(
-            [
-                sys.executable, "-m", "compileall", "-q",
-                "-x", r"(\.venv|venv|__pycache__|\.git|node_modules|site-packages)",
-                ".",
-            ],
-            p,
-        )
+        # Use `sys.executable` instead of bare "python" so we always invoke the
+        # interpreter running this server — relying on PATH can hit the
+        # Windows Store stub, which hangs subprocess calls.
+        # Enumerate .py files explicitly (instead of `compileall -x <regex> .`)
+        # so we never descend into massive vendored trees and trip the timeout.
+        files = _collect_python_sources(p)
+        if not files:
+            return {"ok": True, "skipped": True, "reason": "no .py files found"}
+        return _run([sys.executable, "-m", "compileall", "-q", *files], p)
     return {"ok": True, "skipped": True, "reason": f"no build recipe for stacks={stacks}"}
 
 
@@ -274,7 +301,7 @@ def _score(lint: dict, tests: dict, build: dict) -> int:
     parts = []
     for r in (lint, tests, build):
         if r.get("skipped"):
-            parts.append(70)  # neutral
+            parts.append(70)   # neutral
         elif r.get("ok"):
             parts.append(100)
         else:
@@ -351,16 +378,19 @@ if __name__ == "__main__":
 
 ### What's new vs. §3.1
 
-| Concept | Where you see it |
-|---------|------------------|
-| **Subprocess + timeout** | `_run` — never let a tool hang the agent |
-| **Output truncation** | `_truncate` — protect the context window |
-| **Tool composition** | `health_report` calls `run_lint`/`run_tests`/`run_build` so the LLM can do one call instead of four |
-| **Resources** | `@mcp.resource("repodoctor://...")` — read-only data the model can pull when it wants |
-| **State across calls** | `~/.repo-doctor/last_report_path.txt` lets `last-report` survive restarts |
-| **`sys.executable` over bare `"python"`** | `run_build` — guarantees we hit the interpreter running this server, not whatever PATH says (the Windows Store stub will silently hang you) |
-| **Exit-code-aware result mapping** | `run_tests` — pytest's exit code 5 means "no tests collected", which is *skipped*, not *failed* |
-| **PATH-tolerant tool lookup** | `_which` falls back to `~/.local/bin` so `uv tool install ruff` "just works" without a shell restart |
+| Pattern | Where you see it | Why |
+|---|---|---|
+| **Subprocess + timeout** | `_run` | Never let a tool hang the agent |
+| **Output truncation** | `_truncate` | Protect the model's context window |
+| **`stdin=DEVNULL` on child** | `_run` | Children that inherit a piped stdin can hang on Windows |
+| **Tool composition** | `health_report` calls `run_lint`/`run_tests`/`run_build` | One round-trip instead of four |
+| **Resources** | `@mcp.resource("repodoctor://…")` | Read-only data the model can pull when it wants |
+| **State across calls** | `~/.repo-doctor/last_report_path.txt` | `last-report` resource survives restarts |
+| **`sys.executable` over bare `"python"`** | `run_build` | Avoids the Windows Store stub that silently hangs piped subprocesses |
+| **Manual file enumeration for `compileall`** | `_collect_python_sources` | More deterministic than `compileall -x <regex>` and skips vendored trees |
+| **Exit-code-aware result mapping** | `run_tests` (pytest `5` → skipped) | "No tests collected" isn't a failure |
+| **PATH-tolerant tool lookup** | `_which` falls back to `~/.local/bin` | Lets `uv tool install ruff` "just work" without a shell restart |
+| **"Tool not installed" hints** | `run_lint`, `run_tests` | Tells the user *how* to fix it instead of just "skipped" |
 
 ### Try it in the Inspector
 

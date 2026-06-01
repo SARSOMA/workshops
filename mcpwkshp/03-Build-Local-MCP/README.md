@@ -41,7 +41,8 @@ pwd                  # macOS/Linux
 (Get-Location).Path  # Windows PowerShell
 ```
 
-Add to `~/.copilot/mcp-config.json`:
+Add to your MCP config (`~/.copilot/mcp-config.json` on macOS/Linux, or
+`%USERPROFILE%\.copilot\mcp-config.json` on Windows):
 
 ```json
 {
@@ -49,14 +50,16 @@ Add to `~/.copilot/mcp-config.json`:
     "repo-doctor": {
       "type": "local",
       "command": "uv",
-      "args": ["run", "--directory", "<ABS_PATH_TO_server_FOLDER>", "python", "server.py"],
+      "args": ["run", "--directory", "<REPO_DOCTOR_PATH>", "python", "server.py"],
       "tools": ["*"]
     }
   }
 }
 ```
 
-Restart Copilot CLI → `/mcp` should show `repo-doctor ✓ Ready`.
+Replace `<REPO_DOCTOR_PATH>` with the absolute path you printed above.
+
+Restart Copilot CLI → `/mcp` should show `repo-doctor ✓ Ready  5 tools`.
 
 > Prerequisites: [uv](https://docs.astral.sh/uv/getting-started/installation/) installed (`winget install --id=astral-sh.uv` on Windows). Open a fresh shell after installing so PATH picks it up.
 
