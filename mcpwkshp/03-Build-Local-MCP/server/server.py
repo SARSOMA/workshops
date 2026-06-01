@@ -9,8 +9,10 @@ Use `uv run mcp dev server.py` to open the MCP Inspector.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,13 +35,31 @@ def _truncate(text: str) -> str:
     return text
 
 
-def _which(cmd: str) -> bool:
-    return shutil.which(cmd) is not None
+def _which(cmd: str) -> str | None:
+    """Locate an executable on PATH, falling back to well-known per-user tool dirs.
+
+    Returns the absolute path or None. Behaves like ``shutil.which`` but also
+    searches the directories ``uv tool install`` / ``pipx`` deposit binaries
+    into — so a freshly-installed tool works even when PATH wasn't refreshed
+    in the parent shell (a common stumble on Windows after ``uv tool install``).
+    """
+    found = shutil.which(cmd)
+    if found:
+        return found
+    extra_dirs = [Path.home() / ".local" / "bin"]
+    for d in extra_dirs:
+        for ext in ("", ".exe", ".cmd", ".bat"):
+            candidate = d / f"{cmd}{ext}"
+            if candidate.is_file():
+                return str(candidate)
+    return None
 
 
 def _run(cmd: list[str], cwd: Path) -> dict:
-    if not _which(cmd[0]):
+    resolved = _which(cmd[0])
+    if resolved is None:
         return {"ok": False, "skipped": True, "reason": f"{cmd[0]} not found on PATH"}
+    cmd = [resolved, *cmd[1:]]
     try:
         proc = subprocess.run(
             cmd,
@@ -47,6 +67,10 @@ def _run(cmd: list[str], cwd: Path) -> dict:
             capture_output=True,
             text=True,
             timeout=DEFAULT_TIMEOUT,
+            # Detach the child from the MCP server's stdio pipes. When this
+            # server runs over stdio transport, our stdin is a pipe to the
+            # client; children inheriting it can hang on Windows.
+            stdin=subprocess.DEVNULL,
         )
         return {
             "ok": proc.returncode == 0,
@@ -66,6 +90,35 @@ def _resolve(path: str) -> Path:
     return p
 
 
+_BUILD_EXCLUDE_DIRS = {
+    ".venv", "venv", ".env", "env",
+    "__pycache__", ".git", ".hg", ".svn",
+    "node_modules", "site-packages",
+    ".tox", ".nox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    "dist", "build", ".eggs",
+}
+_BUILD_MAX_FILES = 500
+
+
+def _collect_python_sources(root: Path) -> list[str]:
+    """Walk `root` for .py files, skipping vendored / cache directories.
+
+    Returns paths relative to `root` (suitable for passing on the command
+    line with cwd=root). Capped at _BUILD_MAX_FILES so the build step always
+    completes in bounded time regardless of repo size.
+    """
+    sources: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _BUILD_EXCLUDE_DIRS]
+        for name in filenames:
+            if name.endswith(".py"):
+                rel = Path(dirpath, name).relative_to(root)
+                sources.append(str(rel))
+                if len(sources) >= _BUILD_MAX_FILES:
+                    return sources
+    return sources
+
+
 def _detect(path: Path) -> dict:
     stacks: list[str] = []
     if (path / "package.json").exists():
@@ -76,12 +129,19 @@ def _detect(path: Path) -> dict:
         stacks.append("rust")
     if (path / "go.mod").exists():
         stacks.append("go")
+    if (
+        any(path.glob("*.sln"))
+        or any(path.glob("*.csproj"))
+        or any(path.glob("*.fsproj"))
+        or any(path.glob("*.vbproj"))
+    ):
+        stacks.append("dotnet")
     return {"path": str(path), "stacks": stacks or ["unknown"]}
 
 
 @mcp.tool()
 def detect_stack(path: str = ".") -> dict:
-    """Detect which ecosystem(s) a repo uses (node, python, rust, go).
+    """Detect which ecosystem(s) a repo uses (node, python, rust, go, dotnet).
 
     Pass a path to a local directory; defaults to the current working directory.
     """
@@ -99,12 +159,16 @@ def run_lint(path: str = ".") -> dict:
     stacks = _detect(p)["stacks"]
     if "python" in stacks and _which("ruff"):
         return _run(["ruff", "check", "."], p)
+    if "python" in stacks:
+        return {"ok": True, "skipped": True, "reason": "python detected but `ruff` not on PATH — install with `uv tool install ruff`"}
     if "node" in stacks:
         return _run(["npm", "run", "lint", "--if-present"], p)
     if "rust" in stacks:
         return _run(["cargo", "clippy", "--no-deps", "-q"], p)
     if "go" in stacks:
         return _run(["go", "vet", "./..."], p)
+    if "dotnet" in stacks and _which("dotnet"):
+        return _run(["dotnet", "format", "--verify-no-changes", "--no-restore"], p)
     return {"ok": True, "skipped": True, "reason": f"no lint recipe for stacks={stacks}"}
 
 
@@ -114,13 +178,26 @@ def run_tests(path: str = ".") -> dict:
     p = _resolve(path)
     stacks = _detect(p)["stacks"]
     if "python" in stacks and _which("pytest"):
-        return _run(["pytest", "-q", "--maxfail=5"], p)
+        result = _run(["pytest", "-q", "--maxfail=5"], p)
+        # pytest exit code 5 = "no tests collected" — treat as skipped, not failed.
+        if result.get("exit_code") == 5:
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "no tests collected (pytest exit 5)",
+                "command": result.get("command", ""),
+            }
+        return result
+    if "python" in stacks:
+        return {"ok": True, "skipped": True, "reason": "python detected but `pytest` not on PATH — install with `uv tool install pytest`"}
     if "node" in stacks:
         return _run(["npm", "test", "--if-present"], p)
     if "rust" in stacks:
         return _run(["cargo", "test", "-q"], p)
     if "go" in stacks:
         return _run(["go", "test", "./..."], p)
+    if "dotnet" in stacks and _which("dotnet"):
+        return _run(["dotnet", "test", "--nologo", "--verbosity", "quiet"], p)
     return {"ok": True, "skipped": True, "reason": f"no test recipe for stacks={stacks}"}
 
 
@@ -135,8 +212,24 @@ def run_build(path: str = ".") -> dict:
         return _run(["cargo", "build", "-q"], p)
     if "go" in stacks:
         return _run(["go", "build", "./..."], p)
-    if "python" in stacks and _which("python"):
-        return _run(["python", "-m", "compileall", "-q", "."], p)
+    if "dotnet" in stacks and _which("dotnet"):
+        return _run(["dotnet", "build", "--nologo", "--verbosity", "quiet"], p)
+    if "python" in stacks:
+        # Use sys.executable instead of bare "python" so we always invoke the
+        # interpreter running this server. Relying on PATH can resolve to the
+        # Windows Store stub (or another broken shim), which hangs subprocess
+        # calls and trips the build timeout.
+        # Enumerate .py files ourselves and pass them to compileall. This is
+        # more deterministic than `compileall -x <regex> .` (whose regex is
+        # matched against full paths and is easy to get subtly wrong on
+        # Windows) and avoids descending into massive vendored trees.
+        files = _collect_python_sources(p)
+        if not files:
+            return {"ok": True, "skipped": True, "reason": "no .py files found"}
+        return _run(
+            [sys.executable, "-m", "compileall", "-q", *files],
+            p,
+        )
     return {"ok": True, "skipped": True, "reason": f"no build recipe for stacks={stacks}"}
 
 

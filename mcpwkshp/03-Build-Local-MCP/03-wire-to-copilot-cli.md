@@ -27,7 +27,17 @@ You can edit `mcp-config.json` by hand, or use the built-in wizard. We'll do bot
 
 ### Step 1 — Find the absolute path to your project
 
-In the `repo-doctor` directory you created in §3.1:
+**If you built the server yourself in §3.1 and §3.2,** use that folder.
+
+**If you cloned this workshop repo and just want to run the finished server,** point at the prebuilt copy:
+
+```bash
+# from the workshop repo root
+cd mcpwkshp/03-Build-Local-MCP/server
+uv sync       # one-time: creates .venv and installs deps
+```
+
+Then grab the path to that `server` folder:
 
 ```bash
 # macOS / Linux
@@ -54,7 +64,7 @@ Fill in:
 | Server Name | `repo-doctor` |
 | Server Type | `1` (Local) |
 | Command | `uv` |
-| Arguments | `run --project <REPO_DOCTOR_PATH> python server.py` |
+| Arguments | `run --directory <REPO_DOCTOR_PATH> python server.py` |
 | Environment Variables | *(leave blank)* |
 | Tools | `*` |
 
@@ -72,7 +82,7 @@ Open `~/.copilot/mcp-config.json` and add a `repo-doctor` entry under `mcpServer
       "command": "uv",
       "args": [
         "run",
-        "--project",
+        "--directory",
         "<REPO_DOCTOR_PATH>",
         "python",
         "server.py"
@@ -84,6 +94,8 @@ Open `~/.copilot/mcp-config.json` and add a `repo-doctor` entry under `mcpServer
 ```
 
 > Don't forget to expand `<REPO_DOCTOR_PATH>` to the absolute path you grabbed in Step 1.
+>
+> 💡 **Why `--directory` (not `--project`)?** `--project` sets the project context but does **not** change the working directory. Copilot CLI spawns the server from your home directory (or wherever it was launched), so `python server.py` would fail to find the script. `--directory` sets both project *and* cwd → `server.py` resolves correctly.
 
 If you already have other servers configured, just merge the `repo-doctor` key alongside them — don't replace the whole file.
 
@@ -133,12 +145,33 @@ After `health_report` runs, you should have a fresh `repo-doctor-report.md` in t
 
 ## Troubleshooting
 
+### `MCP error -32000: Connection closed` (the most common failure)
+
+This means the child process exited *before* finishing the MCP `initialize` handshake — i.e., it never even said hello. **Always reproduce by running the exact command from your shell:**
+
+```powershell
+uv run --directory <REPO_DOCTOR_PATH> python server.py
+```
+
+You'll see one of:
+
+| Output | Diagnosis | Fix |
+|---|---|---|
+| `'uv' is not recognized` / `command not found: uv` | `uv` isn't installed or isn't on PATH | Install it: `winget install --id=astral-sh.uv` (Windows) or `curl -LsSf https://astral.sh/uv/install.sh \| sh` (macOS/Linux). **Open a new shell**, then verify with `uv --version`. |
+| `No such file or directory: server.py` | You used `--project` instead of `--directory`, so cwd isn't the project | Switch the flag to `--directory` (see Step 2). |
+| Python traceback | Import error / syntax error in `server.py` | Fix the code; re-run `uv run mcp dev server.py` for the Inspector. |
+| **Silent — just hangs** | ✅ **Success.** A healthy stdio MCP server waits for JSON-RPC on stdin. Press Ctrl+C — Copilot CLI will be able to talk to it. | (no action) |
+
+### Other symptoms
+
 | Symptom | Likely cause / fix |
 |---------|--------------------|
 | `repo-doctor` not in `/mcp` | Restart Copilot CLI; check `~/.copilot/mcp-config.json` is valid JSON |
-| "command not found: uv" | Copilot CLI doesn't see `uv` on PATH. Use the **absolute path** to `uv` (e.g. `~/.local/bin/uv`) in `command:` |
-| "No such file or directory: server.py" | The `--project <path>` argument must be the **absolute path** to the repo-doctor folder, and `server.py` must live there |
+| Copilot CLI still says `Connection closed` after installing uv | You didn't restart Copilot CLI in a fresh shell that sees the new PATH. Quit, open a new terminal, run `copilot` again. |
+| "command not found: uv" but `uv --version` works in your shell | Copilot CLI was launched from a session before `uv` was installed. Use the **absolute path** to `uv` (e.g., `C:\Users\<you>\.local\bin\uv.exe`) in `command:`. |
 | Tools listed but call hangs | Open the Inspector (`uv run mcp dev server.py`) and reproduce — likely a Python exception inside a tool. Logs print to stderr. |
+| `run_build` times out at 120s on Windows with `python -m compileall` | Bare `"python"` from PATH resolved to the Microsoft Store stub (`%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe`), which can hang when stdin/stdout are piped. The reference `server.py` already avoids this by invoking `sys.executable` instead of `"python"`. If you typed your own version, mirror that change. To verify the stub is the culprit: `Get-Command python` — if `Source` is under `WindowsApps`, that's the stub. |
+| `run_lint` / `run_tests` say "not on PATH" after `uv tool install ruff pytest` | `uv tool install` drops binaries in `~/.local/bin`, which isn't on PATH by default. Run `uv tool update-shell`, then **close every terminal and Copilot CLI session** so the new PATH is inherited. |
 
 ---
 

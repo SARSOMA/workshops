@@ -21,12 +21,12 @@ If you completed those, you already have most of the tooling we need.
 | Section | Title | Duration | Description |
 |---------|-------|----------|-------------|
 | [00](./00-Prerequisites/) | Prerequisites | Pre-work | Install Python, uv, Azure CLI, Copilot CLI |
-| [01](./01-What-Is-MCP/) | What is MCP? | 10 min | Concept, diagrams, transports |
-| [02](./02-Where-MCP-Is-Used/) | Where MCP is Used | 10 min | Real-world server tour + live demo |
-| [03](./03-Build-Local-MCP/) | Build a Local MCP — *Repo Doctor* | 35 min | Live-build a Python MCP server with FastMCP |
+| [01](./01-What-Is-MCP/) | Introduction to MCP | 15 min | What MCP is, primitives, where it's used today, effects on the context window |
+| [02](./02-Transports-And-Topology/) | Transports & Topology | 10 min | stdio vs HTTP, local vs remote, how the client discovers/spawns/talks to a server |
+| [03](./03-Build-Local-MCP/) | Build a Local MCP — *Repo Doctor* | 30 min | Live-build a Python MCP server with FastMCP and wire it into Copilot CLI |
 | **Break** | 5 minutes | | |
-| [04](./04-Remote-MCP-on-Azure/) | Remote MCP on Azure | 25 min | Deploy Microsoft's Azure MCP to Container Apps |
-| [05](./05-Wrap-Up/) | Wrap-up & Q&A | 5 min | Security, links, next steps |
+| [04](./04-Remote-MCP-on-Azure/) | Build a Remote MCP on Azure | 25 min | Deploy Microsoft's Azure MCP to Container Apps; connect Copilot CLI and run a live cloud query |
+| [05](./05-Wrap-Up/) | Wrap-up & Q&A | 5 min | Key takeaways, security, open discussion |
 
 **Total**: ~90 minutes
 
@@ -62,11 +62,11 @@ Each section follows **Concept → Practice → Q&A**, matching the style used i
 
 | Time  | Section | Activity |
 |-------|---------|----------|
-| 0:00  | §1 | What is MCP — analogy + architecture |
-| 0:10  | §2 | Where MCP is used — server tour + GitHub MCP demo |
-| 0:20  | §3 | Build a local MCP — *Repo Doctor* |
+| 0:00  | §1 | Introduction to MCP — what it is, primitives, where used today, context-window effects |
+| 0:15  | §2 | Transports & Topology — stdio vs HTTP, local vs remote, client↔server mechanics |
+| 0:25  | §3 | Build a local MCP — *Repo Doctor* |
 | 0:55  | **Break** | 5 min |
-| 1:00  | §4 | Deploy Microsoft Azure MCP to Azure Container Apps |
+| 1:00  | §4 | Deploy Microsoft Azure MCP to Azure Container Apps + live cloud query |
 | 1:25  | §5 | Wrap-up & Q&A |
 
 ---
@@ -121,11 +121,14 @@ mcpwkshp/
 │
 ├── 01-What-Is-MCP/
 │   ├── README.md
-│   └── 01-mcp-explained.md                # Concept + diagrams + Q&A
+│   ├── 01-mcp-explained.md                # Definition, USB-C analogy, primitives, vocabulary, roles
+│   ├── 02-where-used-today.md             # Production MCP server tour + GitHub MCP demo
+│   └── 03-context-window.md               # Token-cost effects of connecting MCP servers
 │
-├── 02-Where-MCP-Is-Used/
+├── 02-Transports-And-Topology/
 │   ├── README.md
-│   └── 01-real-world-examples.md          # Server tour + GitHub MCP demo
+│   ├── 01-transports.md                   # stdio vs HTTP, local vs remote matrix
+│   └── 02-client-talks-to-server.md       # Discovery, spawn, JSON-RPC trace, mcp-config.json
 │
 ├── 03-Build-Local-MCP/
 │   ├── README.md

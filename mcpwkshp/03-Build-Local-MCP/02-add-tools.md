@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -68,14 +69,31 @@ def _truncate(text: str) -> str:
     return text
 
 
-def _which(cmd: str) -> bool:
-    return shutil.which(cmd) is not None
+def _which(cmd: str) -> str | None:
+    """Locate an executable on PATH, falling back to well-known per-user
+    tool dirs (`~/.local/bin`). Returns the absolute path or None.
+
+    The fallback lets a freshly-installed `uv tool install ruff` work even
+    when the parent shell's PATH wasn't refreshed — a common Windows stumble.
+    """
+    found = shutil.which(cmd)
+    if found:
+        return found
+    extra_dirs = [Path.home() / ".local" / "bin"]
+    for d in extra_dirs:
+        for ext in ("", ".exe", ".cmd", ".bat"):
+            candidate = d / f"{cmd}{ext}"
+            if candidate.is_file():
+                return str(candidate)
+    return None
 
 
 def _run(cmd: list[str], cwd: Path) -> dict:
     """Run a command, return a structured result the LLM can reason about."""
-    if not _which(cmd[0]):
+    resolved = _which(cmd[0])
+    if resolved is None:
         return {"ok": False, "skipped": True, "reason": f"{cmd[0]} not found on PATH"}
+    cmd = [resolved, *cmd[1:]]
     try:
         proc = subprocess.run(
             cmd,
@@ -114,12 +132,19 @@ def _detect(path: Path) -> dict:
         stacks.append("rust")
     if (path / "go.mod").exists():
         stacks.append("go")
+    if (
+        any(path.glob("*.sln"))
+        or any(path.glob("*.csproj"))
+        or any(path.glob("*.fsproj"))
+        or any(path.glob("*.vbproj"))
+    ):
+        stacks.append("dotnet")
     return {"path": str(path), "stacks": stacks or ["unknown"]}
 
 
 @mcp.tool()
 def detect_stack(path: str = ".") -> dict:
-    """Detect which ecosystem(s) a repo uses (node, python, rust, go).
+    """Detect which ecosystem(s) a repo uses (node, python, rust, go, dotnet).
 
     Pass a path to a local directory; defaults to the current working directory.
     """
@@ -145,6 +170,8 @@ def run_lint(path: str = ".") -> dict:
         return _run(["cargo", "clippy", "--no-deps", "-q"], p)
     if "go" in stacks:
         return _run(["go", "vet", "./..."], p)
+    if "dotnet" in stacks and _which("dotnet"):
+        return _run(["dotnet", "format", "--verify-no-changes", "--no-restore"], p)
     return {"ok": True, "skipped": True, "reason": f"no lint recipe for stacks={stacks}"}
 
 
@@ -156,13 +183,24 @@ def run_tests(path: str = ".") -> dict:
     p = _resolve(path)
     stacks = _detect(p)["stacks"]
     if "python" in stacks and _which("pytest"):
-        return _run(["pytest", "-q", "--maxfail=5"], p)
+        result = _run(["pytest", "-q", "--maxfail=5"], p)
+        # pytest exit code 5 = "no tests collected" — treat as skipped, not failed.
+        if result.get("exit_code") == 5:
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "no tests collected (pytest exit 5)",
+                "command": result.get("command", ""),
+            }
+        return result
     if "node" in stacks:
         return _run(["npm", "test", "--if-present"], p)
     if "rust" in stacks:
         return _run(["cargo", "test", "-q"], p)
     if "go" in stacks:
         return _run(["go", "test", "./..."], p)
+    if "dotnet" in stacks and _which("dotnet"):
+        return _run(["dotnet", "test", "--nologo", "--verbosity", "quiet"], p)
     return {"ok": True, "skipped": True, "reason": f"no test recipe for stacks={stacks}"}
 
 
@@ -179,9 +217,23 @@ def run_build(path: str = ".") -> dict:
         return _run(["cargo", "build", "-q"], p)
     if "go" in stacks:
         return _run(["go", "build", "./..."], p)
-    if "python" in stacks and _which("python"):
-        # python "build" — just byte-compile as a smoke test
-        return _run(["python", "-m", "compileall", "-q", "."], p)
+    if "dotnet" in stacks and _which("dotnet"):
+        return _run(["dotnet", "build", "--nologo", "--verbosity", "quiet"], p)
+    if "python" in stacks:
+        # python "build" — just byte-compile as a smoke test, skipping
+        # vendored / cache dirs (.venv on Windows can dominate the timeout).
+        # We use sys.executable (the interpreter running this server) instead
+        # of bare "python" — on Windows, a bare "python" from PATH can resolve
+        # to the Microsoft Store stub, which hangs subprocess calls and trips
+        # the 120s timeout.
+        return _run(
+            [
+                sys.executable, "-m", "compileall", "-q",
+                "-x", r"(\.venv|venv|__pycache__|\.git|node_modules|site-packages)",
+                ".",
+            ],
+            p,
+        )
     return {"ok": True, "skipped": True, "reason": f"no build recipe for stacks={stacks}"}
 
 
@@ -306,6 +358,9 @@ if __name__ == "__main__":
 | **Tool composition** | `health_report` calls `run_lint`/`run_tests`/`run_build` so the LLM can do one call instead of four |
 | **Resources** | `@mcp.resource("repodoctor://...")` — read-only data the model can pull when it wants |
 | **State across calls** | `~/.repo-doctor/last_report_path.txt` lets `last-report` survive restarts |
+| **`sys.executable` over bare `"python"`** | `run_build` — guarantees we hit the interpreter running this server, not whatever PATH says (the Windows Store stub will silently hang you) |
+| **Exit-code-aware result mapping** | `run_tests` — pytest's exit code 5 means "no tests collected", which is *skipped*, not *failed* |
+| **PATH-tolerant tool lookup** | `_which` falls back to `~/.local/bin` so `uv tool install ruff` "just works" without a shell restart |
 
 ### Try it in the Inspector
 
@@ -325,7 +380,7 @@ In the Inspector:
 - **Why is `health_report` one tool and not "ask the LLM to chain the three"?**
   Both work. One tool means deterministic ordering and one round-trip. Chained tools give the LLM the ability to stop early or react to a failure. Trade-off: control vs. flexibility.
 - **What happens if `pytest` isn't installed?**
-  We return `skipped: true` with a `reason`. The LLM will mention it in its summary instead of crashing.
+  We return `skipped: true` with a `reason`. The LLM will mention it in its summary instead of crashing. (And if `pytest` *is* installed but the repo has no tests, we map exit code 5 → `skipped` for the same reason — "no tests" isn't a failure.)
 - **Where should the report be written?**
   Inside the repo — discoverable, easy to commit if you want.
 

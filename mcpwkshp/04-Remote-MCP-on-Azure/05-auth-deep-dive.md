@@ -1,4 +1,4 @@
-# 4.4 — Auth deep-dive: how the Azure MCP demo actually authenticates
+# 4.5 — Auth deep-dive: how the Azure MCP demo actually authenticates
 
 This page unpacks exactly what's happening in the auth flow of the demo we deployed in §4.2 — and what you'd change in production. **Nothing new is deployed in this section.** It's reference material to use during the workshop Q&A.
 
@@ -10,7 +10,7 @@ This page unpacks exactly what's happening in the auth flow of the demo we deplo
 |-----------|-------------|----------------|
 | Client → MCP server (incoming) | **No auth** — disabled by `--dangerously-disable-http-incoming-auth` | Entra OAuth 2.1 + PKCE (Bearer access token) |
 | MCP server → Azure ARM (outgoing) | **System-assigned managed identity**, Reader role on the sub | MI (shared perms) **or** OBO (per-user perms) |
-| Where secrets live | Nowhere — MI tokens come from IMDS | Same — still no secrets |
+| Where secrets live | Nowhere — MI tokens come from the platform's MI endpoint | Same — still no secrets |
 | Token lifetime | ~1h, auto-rotated | ~1h, auto-rotated |
 
 ---
@@ -32,15 +32,15 @@ People conflate these all the time. They are independent knobs.
 ## End-to-end flow for "List my Azure subscriptions"
 
 ```
-   ┌──────────────┐     ① HTTPS POST /mcp       ┌────────────────────────────┐
-   │  Copilot CLI │ ─────  (no auth header)  ──►│  Azure Container App       │
-   │   (laptop)   │                             │   azure-mcp:latest         │
-   └──────────────┘                             │                            │
-                                                │   ② tool: subscription_list│
-                                                │      ↓                     │
-                                                │   ③ DefaultAzureCredential │
-                                                │      → IMDS token endpoint │
-                                                └─────────────┬──────────────┘
+   ┌──────────────┐     ① HTTPS POST /             ┌────────────────────────────┐
+   │  Copilot CLI │ ─────  (no auth header)  ─────►│  Azure Container App       │
+   │   (laptop)   │                                │   azure-mcp:latest         │
+   └──────────────┘                                │                            │
+                                                  │   ② tool: subscription_list│
+                                                  │      ↓                     │
+                                                  │   ③ DefaultAzureCredential │
+                                                  │      → MI token endpoint   │
+                                                  └─────────────┬──────────────┘
                                                               │
                                                               │ ④ Bearer <MI token>
                                                               ▼
@@ -56,9 +56,9 @@ People conflate these all the time. They are independent knobs.
 |---|-------|--------------|-----------|
 | 1 | Copilot CLI | User: *"List my subscriptions"* | — |
 | 2 | Copilot CLI | LLM selects `subscription_list` from `azure-mcp-remote` | — |
-| 3 | Laptop → ACA | `POST https://<fqdn>/mcp` JSON-RPC `tools/call` | **None** (demo) |
+| 3 | Laptop → ACA | `POST https://<fqdn>/` JSON-RPC `tools/call` | **None** (demo) |
 | 4 | ACA | `azmcp` tool handler runs, calls Azure SDK | — |
-| 5 | ACA → IMDS | `GET http://169.254.169.254/metadata/identity/oauth2/token?resource=https://management.azure.com/` | Container App's MI |
+| 5 | ACA → MI token endpoint | Request a token for `https://management.azure.com/` from the Container App's managed-identity endpoint | Container App's MI |
 | 6 | ACA → ARM | `GET /subscriptions?api-version=...` with `Authorization: Bearer <MI token>` | **MI Bearer token** |
 | 7 | ARM | RBAC check: MI has Reader on `/subscriptions/<SUB_ID>` → 200 OK | — |
 | 8 | ACA → Laptop | MCP response with subscription JSON | — |
@@ -70,7 +70,7 @@ People conflate these all the time. They are independent knobs.
 
 ## Why the demo runs without incoming auth
 
-The flag `--dangerously-disable-http-incoming-auth` makes the server skip Entra token validation on `/mcp`. We accepted that risk *only* because:
+The flag `--dangerously-disable-http-incoming-auth` makes the server skip Entra token validation on the MCP endpoint. We accepted that risk *only* because:
 
 1. The public FQDN isn't published anywhere
 2. We deployed with `--read-only` — destructive tools aren't even loaded
@@ -87,7 +87,7 @@ The server flag `--outgoing-auth-strategy` selects how Azure MCP authenticates *
 
 | Strategy | Behavior | When to pick it |
 |----------|---------|------------------|
-| `UseHostingEnvironmentIdentity` | Always use the container's MI (DefaultAzureCredential picks IMDS) | Demo / single-tenant / shared admin |
+| `UseHostingEnvironmentIdentity` | Always use the container's MI (DefaultAzureCredential picks the platform's MI endpoint) | Demo / single-tenant / shared admin |
 | `UseOnBehalfOf` | Take the caller's incoming Entra token, exchange it via OAuth 2.0 OBO for an ARM token scoped to that user | Multi-user, per-user RBAC |
 | `UseAzureCli` | Use the host's `az login` (only relevant when running locally) | Local stdio mode |
 
@@ -138,7 +138,7 @@ az containerapp update \
   "mcpServers": {
     "azure-mcp-remote": {
       "type": "http",
-      "url": "https://<fqdn>/mcp",
+      "url": "https://<fqdn>/",
       "auth": {
         "type": "oauth",
         "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
@@ -168,7 +168,7 @@ The first time the user runs an Azure MCP tool, Copilot CLI launches an **OAuth 
    │ 127.0.0.1    │
    └──────────────┘
 
-   then on every /mcp call:
+   then on every MCP call:
 
    Copilot CLI ─── Authorization: Bearer <access_token> ───► ACA → MCP server
                                                               │
@@ -218,7 +218,7 @@ This is the right setting whenever multiple users with different Azure permissio
 
 | Pitfall | Why it happens | Fix |
 |--------|----------------|-----|
-| `401 Unauthorized` on `/mcp` | You removed the disable flag but didn't add `auth.*` to `mcp-config.json` | Add the OAuth block + restart Copilot CLI |
+| `401 Unauthorized` on the MCP endpoint | You removed the disable flag but didn't add `auth.*` to `mcp-config.json` | Add the OAuth block + restart Copilot CLI |
 | MI calls return `403 AuthorizationFailed` | RBAC role assignment hasn't propagated, or you assigned at the wrong scope | Wait 60s; verify scope is the **subscription**, not the RG |
 | `aud` mismatch in token | Client requested `api://<wrong-app-id>/.default` | Re-check `clientId` in `mcp-config.json` matches the App Registration |
 | OBO returns `AADSTS65001 consent required` | First-time use of the API scope | Run an admin consent: `az ad app permission admin-consent --id <APP_ID>` |

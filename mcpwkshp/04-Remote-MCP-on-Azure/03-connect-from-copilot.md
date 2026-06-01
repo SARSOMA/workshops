@@ -11,7 +11,7 @@ A remote MCP server registers in Copilot CLI almost identically to a local one �
   "mcpServers": {
     "azure-mcp-remote": {
       "type": "http",
-      "url": "https://<your-aca-fqdn>/mcp",
+      "url": "https://<your-aca-fqdn>/",
       "tools": ["*"]
     }
   }
@@ -19,6 +19,9 @@ A remote MCP server registers in Copilot CLI almost identically to a local one �
 ```
 
 That's it. No command, no stdio — just a URL.
+
+> The URL is the FQDN root (`/`), **not** `/mcp`. Hitting `/mcp` returns 404.
+> If you wired this up before and it failed silently, this is almost certainly why.
 
 > If you have a production deployment with Entra auth on the inbound (i.e., you removed `--dangerously-disable-http-incoming-auth`), you'd also include the appropriate `Authorization` header. We're skipping that for the demo.
 
@@ -42,7 +45,7 @@ Inside a Copilot CLI session:
 |-------|-------|
 | Server Name | `azure-mcp-remote` |
 | Server Type | `2` (HTTP) |
-| URL | `https://<your-aca-fqdn>/mcp`  ← from §4.2 step 5 |
+| URL | `https://<your-aca-fqdn>/`  ← from §4.2 step 5 (trailing slash, no `/mcp`) |
 | Headers | *(leave blank)* |
 | Tools | `*` |
 
@@ -57,7 +60,7 @@ Add this entry (merge with whatever else is in `mcpServers`):
   "mcpServers": {
     "azure-mcp-remote": {
       "type": "http",
-      "url": "https://<your-aca-fqdn>/mcp",
+      "url": "https://<your-aca-fqdn>/",
       "tools": ["*"]
     }
   }
@@ -73,7 +76,7 @@ Restart Copilot CLI, then:
 ```
 
 You should see `azure-mcp-remote` listed. If the row shows it failed to connect, double-check:
-- The URL ends in `/mcp` (not just the FQDN)
+- The URL is `https://<fqdn>/` (root, **not** `/mcp` — that returns 404)
 - ACA is up: `az containerapp show -n azmcp-demo -g rg-mcp-demo --query properties.runningStatus`
 
 ### Step 3 — Drive it from natural language
@@ -161,5 +164,6 @@ D) Anonymous access to ARM
 
 ## Next
 
-→ [4.4 — Auth deep-dive: incoming vs outgoing, OAuth 2.1, OBO](./04-auth-deep-dive.md)
+→ [4.4 — The MCP handshake, on the wire](./04-mcp-handshake.md)
+→ [4.5 — Auth deep-dive: incoming vs outgoing, OAuth 2.1, OBO](./05-auth-deep-dive.md)
 → [§5 — Wrap-up](../05-Wrap-Up/README.md)

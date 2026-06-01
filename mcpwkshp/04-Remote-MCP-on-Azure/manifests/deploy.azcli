@@ -43,7 +43,7 @@ az containerapp create \
   --resource-group "$RG" \
   --environment "$ENV_NAME" \
   --image "$IMAGE" \
-  --target-port 8080 \
+  --target-port 5000 \
   --ingress external \
   --transport http \
   --system-assigned \
@@ -51,17 +51,12 @@ az containerapp create \
   --cpu 0.5 --memory 1.0Gi \
   --env-vars \
       ASPNETCORE_ENVIRONMENT=Production \
+      ASPNETCORE_URLS=http://0.0.0.0:5000 \
+      ALLOW_INSECURE_EXTERNAL_BINDING=true \
+      AZURE_TOKEN_CREDENTIALS=ManagedIdentityCredential \
       AZURE_MCP_DANGEROUSLY_DISABLE_HTTPS_REDIRECTION=true \
       AZURE_MCP_DANGEROUSLY_ENABLE_FORWARDED_HEADERS=true \
-  --args \
-      "--transport" "http" \
-      "--mode" "all" \
-      "--read-only" \
-      "--outgoing-auth-strategy" "UseHostingEnvironmentIdentity" \
-      "--dangerously-disable-http-incoming-auth" \
-      "--namespace" "subscription" \
-      "--namespace" "group" \
-  --only-show-errors >/dev/null
+  --args "--transport, http, --read-only, --outgoing-auth-strategy, UseHostingEnvironmentIdentity, --dangerously-disable-http-incoming-auth"  --only-show-errors >/dev/null
 
 echo ">> Granting the Container App's managed identity Reader on the subscription…"
 PRINCIPAL_ID=$(az containerapp identity show \
@@ -82,7 +77,9 @@ cat <<EOF
 
 ✅ Deployed.
 
-   Azure MCP URL:  https://${FQDN}/mcp
+   Azure MCP URL:  https://${FQDN}/
+
+   (MCP endpoint is the root path, NOT /mcp — /mcp returns 404.)
 
 Add this to ~/.copilot/mcp-config.json (or use /mcp add inside Copilot CLI):
 
@@ -90,11 +87,18 @@ Add this to ~/.copilot/mcp-config.json (or use /mcp add inside Copilot CLI):
   "mcpServers": {
     "azure-mcp-remote": {
       "type": "http",
-      "url": "https://${FQDN}/mcp",
+      "url": "https://${FQDN}/",
       "tools": ["*"]
     }
   }
 }
+
+Smoke test:
+
+  curl -s -i "https://${FQDN}/" -X POST \\
+    -H 'Content-Type: application/json' \\
+    -H 'Accept: application/json, text/event-stream' \\
+    --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
 
 When you're done, clean up with:
 

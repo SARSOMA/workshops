@@ -1,12 +1,12 @@
-# Tutorial 2.1 — Where MCP Is Used in the Real World
+# Tutorial 1.2 — Where MCP Is Used Today
 
 ---
 
 ## Concept
 
-MCP went from "interesting Anthropic spec" to "everywhere" in about a year. Most major dev tools now ship MCP support, and there's an [official registry](https://github.com/mcp) of servers.
+MCP went from "interesting Anthropic spec" (November 2024) to "everywhere" in about a year. Most major dev tools now ship MCP support, and there's an [official registry](https://github.com/mcp) of servers you can drop into your client.
 
-Here's a tour of servers you'll meet in the wild. Each entry tells you the **one thing it unlocks**.
+Here's a quick tour of servers you'll meet in the wild. Each entry tells you the **one thing it unlocks**.
 
 ### Developer / cloud platforms
 
@@ -86,7 +86,7 @@ You already have this working. Let's prove it's a real MCP under the hood.
    ```
 4. Watch the tool calls fly by. That's MCP doing its job — Copilot picked the right tools, called them, parsed the responses.
 
-Try one more — something with a side effect that demonstrates the agent picking the *right* tool:
+Try one more — something that demonstrates the agent picking the *right* tool:
 
 ```
 What's the most recent issue in SARSOMA/workshops? Summarise it in one sentence.
@@ -130,4 +130,4 @@ D) Magic
 
 ## Next
 
-→ [§3 — Build a local MCP: Repo Doctor](../03-Build-Local-MCP/README.md)
+→ [Effects on the context window](./03-context-window.md)
