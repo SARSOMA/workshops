@@ -28,7 +28,7 @@ A typical entry — one local stdio server and one remote HTTP server:
     },
     "azure-mcp": {
       "type": "http",
-      "url": "https://my-azure-mcp.azurecontainerapps.io/mcp",
+      "url": "https://my-azure-mcp.azurecontainerapps.io/",
       "tools": ["*"]
     }
   }

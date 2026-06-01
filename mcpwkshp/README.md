@@ -8,11 +8,7 @@ A hands-on, 90-minute workshop on the **Model Context Protocol (MCP)** — what 
 **Audience**: Software Engineers and Program Managers (mixed AI familiarity)
 **Platforms**: Windows, macOS, Linux
 
-This workshop builds on two earlier sessions in the AI Forum series:
-- **GitHub Copilot CLI workshop** ([copilotcli2hrwkshp](../copilotcli2hrwkshp/))
-- **Custom Agents workshop** ([customAgents](../customAgents/))
-
-If you completed those, you already have most of the tooling we need.
+This workshop assumes basic familiarity with **GitHub Copilot CLI** and a terminal. You don't need prior MCP, FastAPI, or Azure Container Apps experience.
 
 ---
 

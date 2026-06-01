@@ -54,9 +54,6 @@ Our demo took shortcuts to fit in 25 minutes. Before you ship an MCP server to a
 - Azure MCP commands reference — https://github.com/microsoft/mcp/blob/main/servers/Azure.Mcp.Server/docs/azmcp-commands.md
 - Azure MCP ACA azd templates (managed identity, OBO) — https://github.com/microsoft/mcp/tree/main/servers/Azure.Mcp.Server/azd-templates
 - GitHub Copilot CLI — https://github.com/github/copilot-cli
-- This workshop's earlier sessions:
-  - [GitHub Copilot CLI workshop](../../copilotcli2hrwkshp/)
-  - [Custom Agents workshop](../../customAgents/)
 
 ---
 
@@ -83,4 +80,4 @@ az group delete -n rg-mcp-demo --yes --no-wait
 
 ## Thank you 👋
 
-Questions, ideas, ways this could be better — open an issue or PR on this repo. See you at the next AI Forum.
+Questions, ideas, ways this could be better — open an issue or PR on this repo. Happy hacking!
