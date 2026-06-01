@@ -1,0 +1,1926 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Super MCP — a Mario-style quiz adventure</title>
+<style>
+  :root {
+    --sky-top:  #5c94fc;
+    --sky-bot:  #87cefa;
+    --ground:   #c84a1a;
+    --ground-d: #8a2f10;
+    --grass:    #2bbf2b;
+    --brick:    #c8682d;
+    --brick-d:  #8a3e14;
+    --qblock:   #f7b500;
+    --qblock-d: #b07700;
+    --pipe:     #1ea53a;
+    --pipe-d:   #0f6b22;
+    --coin:     #ffd23a;
+    --mario-r:  #e52521;
+    --mario-b:  #2046d6;
+    --mario-s:  #ffd2a3;
+    --hat:      #e52521;
+    --shoe:     #5a2810;
+    --text:     #fff;
+    --shadow:   rgba(0,0,0,.45);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #111;
+    color: var(--text);
+    font-family: 'Press Start 2P', 'Courier New', monospace;
+    overflow: hidden;
+  }
+  /* Force pixelated look on scaled canvas */
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+  #stage {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: grid;
+    place-items: center;
+    background:
+      radial-gradient(circle at 50% 30%, #0a1a3a 0%, #050814 70%, #000 100%);
+  }
+  #frame {
+    position: relative;
+    width: min(96vw, calc(96vh * 16 / 9));
+    aspect-ratio: 16 / 9;
+    background: linear-gradient(var(--sky-top), var(--sky-bot));
+    box-shadow:
+      0 0 0 4px #222,
+      0 0 0 8px #ffd23a,
+      0 0 0 12px #222,
+      0 20px 60px rgba(0,0,0,.6);
+    overflow: hidden;
+    border-radius: 6px;
+  }
+  #game {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* HUD */
+  #hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    padding: 2.2vmin;
+    color: #fff;
+    text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,.6);
+    letter-spacing: 1px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: clamp(10px, 1.7vmin, 16px);
+  }
+  .pill {
+    background: rgba(0,0,0,.55);
+    border: 2px solid #ffd23a;
+    padding: .5em .8em;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: .6em;
+    backdrop-filter: blur(2px);
+  }
+  .hearts { display: inline-flex; gap: .3em; }
+  .heart {
+    display: inline-block;
+    font-size: 1.3em;
+    line-height: 1;
+    color: #ff3838;
+    text-shadow: 1px 1px 0 #000;
+    transition: filter .2s, transform .2s;
+  }
+  .heart::before { content: "♥"; }
+  .heart.lost { filter: grayscale(1) brightness(.4); transform: scale(.85); }
+  .coin-icon {
+    width: 1em; height: 1em; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff7b0, #ffd23a 55%, #a06800);
+    box-shadow: inset 0 0 0 2px #6e4400;
+    animation: spin 1.5s linear infinite;
+  }
+  @keyframes spin {
+    0%   { transform: scaleX(1); }
+    50%  { transform: scaleX(.15); }
+    100% { transform: scaleX(1); }
+  }
+  #progress-wrap {
+    position: relative;
+    flex: 1;
+    height: 14px;
+    background: rgba(0,0,0,.5);
+    border: 2px solid #ffd23a;
+    border-radius: 7px;
+    overflow: hidden;
+    margin: 0 1rem;
+  }
+  #progress {
+    width: 0%; height: 100%;
+    background: linear-gradient(90deg, #2bbf2b, #ffd23a);
+    transition: width .35s cubic-bezier(.5,1.6,.4,1);
+  }
+
+  /* Center area used for messages */
+  #toast-layer {
+    align-self: stretch;
+    position: relative;
+  }
+  .toast {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%) scale(.8);
+    background: rgba(0,0,0,.7);
+    border: 3px solid #fff;
+    padding: 1em 1.4em;
+    border-radius: 12px;
+    font-size: clamp(12px, 2vmin, 20px);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform .25s cubic-bezier(.5,1.6,.4,1), opacity .25s;
+  }
+  .toast.show { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  .toast.good { border-color: #2bbf2b; box-shadow: 0 0 24px #2bbf2b66; }
+  .toast.bad  { border-color: #ff4040; box-shadow: 0 0 24px #ff404066; }
+
+  /* Footer hints */
+  #footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: clamp(11px, 1.7vmin, 16px);
+    opacity: 1;
+    align-items: center;
+  }
+  #footer > div {
+    background: rgba(0,0,0,.72);
+    border: 2px solid #ffd23a;
+    border-radius: 8px;
+    padding: .55em .8em;
+  }
+  kbd {
+    background: linear-gradient(180deg, #ffffff, #d8d8d8);
+    color: #000;
+    border-radius: 5px;
+    padding: 3px 9px;
+    margin: 0 3px;
+    font-family: inherit;
+    font-size: .95em;
+    font-weight: bold;
+    border: 2px solid #000;
+    box-shadow: 0 2px 0 #000, inset 0 -2px 0 rgba(0,0,0,.15);
+    text-shadow: none;
+    display: inline-block;
+    min-width: 1.4em;
+    text-align: center;
+    letter-spacing: 0;
+  }
+
+  /* Title screen */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(circle at center, rgba(0,0,0,.5), rgba(0,0,0,.85));
+    backdrop-filter: blur(2px);
+    z-index: 10;
+    transition: opacity .3s;
+  }
+  .overlay.hidden { opacity: 0; pointer-events: none; }
+  .panel {
+    text-align: center;
+    padding: 4vmin 5vmin;
+    background: linear-gradient(180deg, #1a1a2e, #0a0a1a);
+    border: 4px solid #ffd23a;
+    border-radius: 14px;
+    box-shadow: 0 0 0 4px #000, 0 30px 80px rgba(0,0,0,.7);
+    max-width: 80vw;
+  }
+  .panel h1 {
+    margin: 0 0 1rem;
+    font-size: clamp(20px, 5vmin, 56px);
+    color: #ffd23a;
+    text-shadow: 4px 4px 0 #c00, 8px 8px 0 #000;
+    letter-spacing: 2px;
+  }
+  .panel h2 {
+    font-size: clamp(14px, 2.4vmin, 26px);
+    margin: 0 0 1rem;
+    color: #fff;
+  }
+  .panel p { font-size: clamp(10px, 1.7vmin, 16px); line-height: 1.7; margin: .4em 0; }
+  .panel .accent { color: #ffd23a; }
+  .blink { animation: blink 1s steps(2, end) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .btn {
+    display: inline-block;
+    margin-top: 1.2rem;
+    padding: .8em 1.4em;
+    font-family: inherit;
+    font-size: clamp(11px, 1.8vmin, 16px);
+    background: #ffd23a;
+    color: #000;
+    border: 3px solid #000;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 4px 0 #000, 0 6px 0 rgba(0,0,0,.4);
+    transition: transform .1s, box-shadow .1s;
+    letter-spacing: 1px;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 0 #000, 0 8px 0 rgba(0,0,0,.4); }
+  .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1rem 0;
+    font-size: clamp(11px, 1.8vmin, 16px);
+  }
+  .stat-box {
+    background: rgba(255,210,58,.1);
+    border: 2px solid #ffd23a;
+    border-radius: 8px;
+    padding: .6em .8em;
+  }
+
+  /* Question modal */
+  #q-modal {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(0,0,10,.55);
+    backdrop-filter: blur(3px);
+    z-index: 8;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s;
+  }
+  #q-modal.show { opacity: 1; pointer-events: auto; }
+  #q-card {
+    width: min(78vw, 700px);
+    background: linear-gradient(180deg, #1a1f3a, #0c1024);
+    border: 4px solid #ffd23a;
+    border-radius: 14px;
+    padding: 2.4vmin 2.6vmin;
+    box-shadow: 0 0 0 4px #000, 0 24px 60px rgba(0,0,0,.7);
+    transform: translateY(40px) scale(.95);
+    transition: transform .3s cubic-bezier(.5,1.6,.4,1);
+  }
+  #q-modal.show #q-card { transform: translateY(0) scale(1); }
+  #q-tag {
+    display: inline-block;
+    font-size: clamp(9px, 1.4vmin, 13px);
+    color: #000;
+    background: #ffd23a;
+    padding: .3em .6em;
+    border-radius: 4px;
+    border: 2px solid #000;
+    margin-bottom: .8em;
+    letter-spacing: 1px;
+  }
+  #q-text {
+    font-size: clamp(13px, 2.2vmin, 22px);
+    line-height: 1.5;
+    margin: .3em 0 1em;
+    color: #fff;
+    text-shadow: 2px 2px 0 #000;
+  }
+  #q-choices {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1vmin;
+  }
+  .choice {
+    display: flex;
+    align-items: center;
+    gap: .7em;
+    background: rgba(255,255,255,.08);
+    border: 2px solid #fff5;
+    color: #fff;
+    padding: .8em 1em;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: clamp(10px, 1.6vmin, 14px);
+    cursor: pointer;
+    text-align: left;
+    line-height: 1.4;
+    transition: transform .1s, background .15s, border-color .15s;
+  }
+  .choice:hover { background: rgba(255,210,58,.18); border-color: #ffd23a; }
+  .choice:active { transform: scale(.97); }
+  .choice .key {
+    width: 1.8em; height: 1.8em;
+    flex: 0 0 auto;
+    display: grid; place-items: center;
+    background: #ffd23a; color: #000;
+    border: 2px solid #000;
+    border-radius: 6px;
+    font-weight: bold;
+  }
+  .choice.correct { background: #1f8a1f; border-color: #2bbf2b; animation: pop .3s; }
+  .choice.wrong   { background: #8a1f1f; border-color: #ff4040; animation: shake .3s; }
+  @keyframes pop  { 0%{transform:scale(1)} 50%{transform:scale(1.05)} 100%{transform:scale(1)} }
+  @keyframes shake{ 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+
+  /* Sound toggle */
+  #snd {
+    position: absolute;
+    top: 1.5vmin; right: 1.5vmin;
+    width: 3.4vmin; height: 3.4vmin;
+    min-width: 30px; min-height: 30px;
+    background: rgba(0,0,0,.6);
+    border: 2px solid #ffd23a;
+    border-radius: 50%;
+    color: #ffd23a;
+    cursor: pointer;
+    display: grid; place-items: center;
+    font-family: inherit;
+    font-size: 14px;
+    z-index: 20;
+    pointer-events: auto;
+  }
+  #snd:hover { background: rgba(255,210,58,.2); }
+
+  /* small screens: stack choices */
+  @media (max-width: 700px) {
+    #q-choices { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="frame">
+    <canvas id="game" width="960" height="540" aria-label="MCP Quest game canvas"></canvas>
+
+    <div id="hud">
+      <div class="row">
+        <div class="pill">
+          <span>LIVES</span>
+          <span class="hearts" id="hearts">
+            <span class="heart"></span><span class="heart"></span><span class="heart"></span>
+          </span>
+        </div>
+        <div id="progress-wrap" aria-label="Quest progress">
+          <div id="progress"></div>
+        </div>
+        <div class="pill">
+          <span class="coin-icon"></span>
+          <span>x</span>
+          <span id="coins">0</span>
+        </div>
+        <div class="pill">
+          <span>SCORE</span>
+          <span id="score">0</span>
+        </div>
+      </div>
+
+      <div id="toast-layer">
+        <div class="toast" id="toast"></div>
+      </div>
+
+      <div id="footer">
+        <div>
+          <kbd>←</kbd><kbd>→</kbd> move &nbsp;·&nbsp;
+          <kbd>Space</kbd> jump &nbsp;·&nbsp;
+          <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> answer
+        </div>
+        <div>Stomp <span style="color:#a0683a">Goombas</span> · smash <span style="color:#ffd23a">?</span> blocks · reach the <span style="color:#2bbf2b">flag</span> 🏁</div>
+      </div>
+    </div>
+
+    <button id="snd" title="Toggle sound (M)">♪</button>
+
+    <!-- Question modal -->
+    <div id="q-modal" role="dialog" aria-modal="true" aria-labelledby="q-text">
+      <div id="q-card">
+        <div id="q-tag">QUESTION BLOCK</div>
+        <div id="q-text"></div>
+        <div id="q-choices"></div>
+      </div>
+    </div>
+
+    <!-- Title -->
+    <div id="title" class="overlay">
+      <div class="panel">
+        <h1>SUPER&nbsp;MCP</h1>
+        <h2>A Mario-style quiz adventure</h2>
+        <p>Run, jump, and smash <span class="accent">?</span> blocks to face questions about the Model Context Protocol.</p>
+        <p>Stomp <span class="accent">Goombas</span> for bonus points · answer right to earn coins · three wrong = game over.</p>
+        <p class="blink" style="margin-top:1.2rem">Press <kbd>Enter</kbd> or click below to begin</p>
+        <button class="btn" id="start-btn">▶ START GAME</button>
+        <p style="font-size:clamp(9px,1.4vmin,12px);opacity:.7;margin-top:1.2rem">
+          Tip: turn the sound on for the chiptune track 🎵
+        </p>
+      </div>
+    </div>
+
+    <!-- Win -->
+    <div id="win" class="overlay hidden">
+      <div class="panel">
+        <h1 style="text-shadow:4px 4px 0 #0a7,8px 8px 0 #000">YOU WIN!</h1>
+        <h2>The MCP Princess is saved 🏰👸</h2>
+        <div class="stats">
+          <div class="stat-box">Score<br><span id="win-score" class="accent" style="font-size:1.4em">0</span></div>
+          <div class="stat-box">Coins<br><span id="win-coins" class="accent" style="font-size:1.4em">0</span></div>
+          <div class="stat-box">Lives left<br><span id="win-lives" class="accent" style="font-size:1.4em">0</span></div>
+          <div class="stat-box">Time<br><span id="win-time" class="accent" style="font-size:1.4em">0s</span></div>
+        </div>
+        <button class="btn" id="restart-btn">▶ PLAY AGAIN</button>
+      </div>
+    </div>
+
+    <!-- Game over -->
+    <div id="over" class="overlay hidden">
+      <div class="panel">
+        <h1 style="text-shadow:4px 4px 0 #700,8px 8px 0 #000">GAME OVER</h1>
+        <h2>The pipe leads nowhere this time 🌀</h2>
+        <p>But you can try again — the answer is somewhere in the <span class="accent">mcpwkshp/</span> folder.</p>
+        <button class="btn" id="retry-btn">▶ TRY AGAIN</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   MCP Quest — single-file Mario-style quiz game
+   ========================================================================= */
+'use strict';
+
+// ---------- Question bank (MCP-themed) ----------
+// Edit/add questions here — `a` is the index of the correct answer.
+const QUESTIONS = [
+  {
+    q: "What does MCP stand for?",
+    choices: [
+      "Model Context Protocol",
+      "Microsoft Cloud Platform",
+      "Multi-Channel Pipeline",
+      "Modular Code Provider"
+    ],
+    a: 0,
+  },
+  {
+    q: "Which is NOT one of the three MCP primitives?",
+    choices: ["Tools", "Resources", "Prompts", "Fine-tunes"],
+    a: 3,
+  },
+  {
+    q: "A local MCP server typically uses which transport?",
+    choices: ["WebSockets", "stdio", "gRPC", "FTP"],
+    a: 1,
+  },
+  {
+    q: "A remote MCP server (e.g. on Azure Container Apps) uses which transport?",
+    choices: ["stdio", "SMTP", "Streamable HTTP", "SSH"],
+    a: 2,
+  },
+  {
+    q: "Where does GitHub Copilot CLI store MCP server config?",
+    choices: [
+      "~/.copilot/mcp-config.json",
+      "/etc/mcp/config",
+      "C:\\Program Files\\MCP\\config.ini",
+      "Nowhere — it's hard-coded"
+    ],
+    a: 0,
+  },
+  {
+    q: "What's the popular one-line analogy for MCP?",
+    choices: [
+      "REST for AI",
+      "USB-C for AI",
+      "Bluetooth for AI",
+      "Docker for AI"
+    ],
+    a: 1,
+  },
+  {
+    q: "With MCP, M AI clients × N tools becomes…",
+    choices: ["M × N still", "M + N", "M²", "N!"],
+    a: 1,
+  },
+  {
+    q: "Which is a TOOL (a verb)?",
+    choices: [
+      "list_repos",
+      "create_pull_request",
+      "repodoctor://template",
+      "code-review-checklist"
+    ],
+    a: 1,
+  },
+  {
+    q: "When your MCP tool calls a subprocess that prints lots of output, you should…",
+    choices: [
+      "Return everything — context is cheap",
+      "Truncate / summarize before returning",
+      "Pipe it to /dev/null",
+      "Email it to the user"
+    ],
+    a: 1,
+  },
+  {
+    q: "Which Azure service did we use to host the remote Azure MCP server?",
+    choices: [
+      "Azure Functions",
+      "Azure Kubernetes Service",
+      "Azure Container Apps",
+      "Azure App Service"
+    ],
+    a: 2,
+  },
+];
+
+// ---------- Sound (Web Audio synth — no external assets) ----------
+const Sound = (() => {
+  let ctx = null;
+  let muted = false;
+  let musicNodes = null;
+  let musicTimer = null;
+
+  function ensureCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  function blip(freq, dur=0.08, type='square', vol=0.18) {
+    if (muted) return;
+    const c = ensureCtx();
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, c.currentTime);
+    g.gain.setValueAtTime(0, c.currentTime);
+    g.gain.linearRampToValueAtTime(vol, c.currentTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + dur);
+    o.connect(g).connect(c.destination);
+    o.start();
+    o.stop(c.currentTime + dur + 0.02);
+  }
+
+  // Cached noise buffer (reused for fireworks crackles/booms)
+  let noiseBuf = null;
+  function getNoiseBuffer() {
+    if (noiseBuf) return noiseBuf;
+    const c = ensureCtx();
+    const len = c.sampleRate * 1.5;
+    noiseBuf = c.createBuffer(1, len, c.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    return noiseBuf;
+  }
+
+  // Generic filtered noise burst — building block for boom + crackles
+  function noiseBurst({ dur=0.3, vol=0.3, type='bandpass', freq=1000, q=1, attack=0.005, release=null }) {
+    if (muted) return;
+    const c = ensureCtx();
+    const src = c.createBufferSource();
+    src.buffer = getNoiseBuffer();
+    const filt = c.createBiquadFilter();
+    filt.type = type;
+    filt.frequency.setValueAtTime(freq, c.currentTime);
+    filt.Q.setValueAtTime(q, c.currentTime);
+    const g = c.createGain();
+    const t0 = c.currentTime;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(filt).connect(g).connect(c.destination);
+    src.start();
+    src.stop(t0 + dur + 0.05);
+  }
+
+  // Pitch sweep (used for the rising whistle before the burst)
+  function sweep({ f0=2200, f1=600, dur=0.25, vol=0.08, type='sine' }) {
+    if (muted) return;
+    const c = ensureCtx();
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = type;
+    const t0 = c.currentTime;
+    o.frequency.setValueAtTime(f0, t0);
+    o.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t0 + dur);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(c.destination);
+    o.start();
+    o.stop(t0 + dur + 0.05);
+  }
+
+  function chord(freqs, dur=0.18, type='square', vol=0.12) {
+    freqs.forEach(f => blip(f, dur, type, vol));
+  }
+
+  // Note frequencies (just enough notes for our melody)
+  const N = (() => {
+    const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const map = {};
+    for (let oct = 2; oct <= 6; oct++) {
+      names.forEach((n, i) => {
+        const f = 440 * Math.pow(2, ((oct - 4) * 12 + i - 9) / 12);
+        map[n + oct] = f;
+      });
+    }
+    return map;
+  })();
+
+  // Original chiptune — upbeat 8-bit platformer vibe (original composition).
+  // 16 bars in 2 sections. Each entry: [note or null, duration in 16ths].
+  const MELODY = [
+    // Section A — bouncy main theme
+    ['E5',2],['E5',2],[null,2],['E5',2],[null,2],['C5',2],['E5',2],['G5',4],[null,4],
+    ['C5',4],[null,2],['G4',4],[null,2],['E4',4],[null,2],['A4',2],['B4',2],['A#4',2],['A4',4],
+    ['G4',3],['E5',3],['G5',2],['A5',4],['F5',2],['G5',4],[null,2],['E5',2],['C5',2],['D5',2],['B4',4],
+    // Section B — exploratory bridge
+    ['G4',2],['B4',2],['D5',2],['G5',4],['F5',2],['E5',4],['D5',2],['C5',2],[null,2],['E5',4],
+    ['A4',4],['B4',2],['A4',2],['G4',4],[null,2],['G4',2],['A4',2],['B4',2],['C5',4],
+    ['C5',2],['E5',2],['G5',2],['C6',4],['A5',2],['G5',6],[null,2],
+    ['F5',2],['D5',2],['B4',2],['G4',6],[null,2],
+  ];
+  // Walking bass — quarter notes rooted on the chord changes
+  const BASS = [
+    ['C3',4],['C3',4],['G2',4],['C3',4],
+    ['F2',4],['F2',4],['G2',4],['C3',4],
+    ['A2',4],['A2',4],['E2',4],['A2',4],
+    ['F2',4],['G2',4],['C3',4],['G2',4],
+  ];
+  // Light percussive arp (super soft)
+  const ARP = [
+    ['C5',1],['E5',1],['G5',1],['C6',1],
+    ['F4',1],['A4',1],['C5',1],['F5',1],
+    ['A4',1],['C5',1],['E5',1],['A5',1],
+    ['G4',1],['B4',1],['D5',1],['G5',1],
+  ];
+
+  function startMusic() {
+    if (musicTimer) return;
+    if (muted) return;
+    ensureCtx();
+    const stepMs = 95; // 16th note (slightly faster, more upbeat)
+    let mi = 0, bi = 0, ai = 0;
+    let melCur = 0, basCur = 0, arpCur = 0;
+
+    musicTimer = setInterval(() => {
+      // melody (square — bright lead)
+      if (melCur <= 0) {
+        const [n, d] = MELODY[mi % MELODY.length];
+        if (n) blip(N[n], (d * stepMs) / 1000 * 0.85, 'square', 0.11);
+        melCur = d;
+        mi++;
+      }
+      melCur--;
+
+      // bass (triangle — punchy low end)
+      if (basCur <= 0) {
+        const [n, d] = BASS[bi % BASS.length];
+        if (n) blip(N[n], (d * stepMs) / 1000 * 0.95, 'triangle', 0.20);
+        basCur = d;
+        bi++;
+      }
+      basCur--;
+
+      // arp (very soft sparkle on top)
+      if (arpCur <= 0) {
+        const [n, d] = ARP[ai % ARP.length];
+        if (n) blip(N[n], (d * stepMs) / 1000 * 0.6, 'square', 0.035);
+        arpCur = d;
+        ai++;
+      }
+      arpCur--;
+    }, stepMs);
+  }
+
+  function stopMusic() {
+    if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+  }
+
+  // SFX
+  const sfx = {
+    jump:    () => { blip(660, 0.06, 'square', 0.15); setTimeout(()=>blip(990,0.10,'square',0.13),40); },
+    coin:    () => { blip(N['E5'], 0.06, 'square'); setTimeout(()=>blip(N['B5'],0.12,'square'),60); },
+    correct: () => { [N['C5'],N['E5'],N['G5'],N['C6'],N['E6']].forEach((f,i)=>setTimeout(()=>blip(f,0.12,'square',0.18),i*70)); },
+    wrong:   () => { blip(N['A3'],0.18,'sawtooth',0.20); setTimeout(()=>blip(N['F3'],0.22,'sawtooth',0.18),150); },
+    hit:     () => blip(N['G3'],0.18,'sawtooth',0.22),
+    stomp:   () => { blip(180,0.08,'square',0.25); setTimeout(()=>blip(90,0.12,'sawtooth',0.20),40); },
+    win:     () => { [N['C5'],N['E5'],N['G5'],N['C6'],N['E6'],N['G6'],N['C6']].forEach((f,i)=>setTimeout(()=>blip(f,0.18,'square',0.22),i*120)); },
+    over:    () => { [N['G4'],N['F4'],N['E4'],N['D4'],N['C4']].forEach((f,i)=>setTimeout(()=>blip(f,0.22,'sawtooth',0.22),i*180)); },
+    block:   () => blip(N['G4'], 0.08, 'square', 0.18),
+    firework:() => {
+      // Real-world firework profile:
+      //   (1) faint whistle as the shell climbs
+      //   (2) sharp "CRACK" transient at burst (highpass click)
+      //   (3) deep round "BOOM" body with long low-frequency rumble tail
+      //   (4) popcorn-style crackles scattered over ~1.2s
+
+      // (1) Soft rising whistle — gentle, far away
+      sweep({ f0: 500, f1: 1400, dur: 0.32, vol: 0.035, type: 'sine' });
+
+      // (2) The crack — single ultra-short transient, the leading edge of the bang
+      setTimeout(() => {
+        noiseBurst({ dur: 0.05, vol: 0.45, type: 'highpass', freq: 2200, q: 0.5, attack: 0.0005 });
+      }, 320);
+
+      // (3) The boom — deep body. Layered:
+      //     a) low thump (the punch you feel in your chest)
+      //     b) sub-bass rumble (the long decay tail)
+      //     c) mid body (gives it weight and roundness)
+      setTimeout(() => {
+        // Punch
+        noiseBurst({ dur: 0.25, vol: 0.55, type: 'lowpass',  freq: 140, q: 0.6, attack: 0.003 });
+        // Rumble tail — softer, longer
+        noiseBurst({ dur: 0.85, vol: 0.28, type: 'lowpass',  freq: 90,  q: 0.5, attack: 0.02 });
+        // Body / chest thump
+        noiseBurst({ dur: 0.35, vol: 0.30, type: 'bandpass', freq: 320, q: 0.8, attack: 0.005 });
+        // A second faint echo-like thump 90ms later → "fake reverb"
+        setTimeout(() => {
+          noiseBurst({ dur: 0.45, vol: 0.14, type: 'lowpass', freq: 110, q: 0.6, attack: 0.015 });
+        }, 90);
+      }, 335);
+
+      // (4) Popcorn crackles — random, sparse, varied tones.
+      //     Mix bandpass pops (sparkle "tsk") with highpass clicks ("tk").
+      const start = 420;
+      const numCrackles = 22;
+      for (let i = 0; i < numCrackles; i++) {
+        // Cluster more crackles near the start, taper out
+        const t = Math.pow(Math.random(), 0.7);
+        const delay = start + t * 950 + Math.random() * 60;
+        const isClick = Math.random() < 0.45;
+        setTimeout(() => {
+          if (isClick) {
+            // Tight wooden "tk"
+            noiseBurst({
+              dur: 0.018 + Math.random() * 0.02,
+              vol: 0.08 + Math.random() * 0.06,
+              type: 'highpass',
+              freq: 3000 + Math.random() * 3500,
+              q: 0.5,
+              attack: 0.0005,
+            });
+          } else {
+            // Sparkly "tss"
+            noiseBurst({
+              dur: 0.05 + Math.random() * 0.05,
+              vol: 0.05 + Math.random() * 0.05,
+              type: 'bandpass',
+              freq: 2500 + Math.random() * 4500,
+              q: 2 + Math.random() * 2,
+              attack: 0.001,
+            });
+          }
+        }, delay);
+      }
+    },
+  };
+
+  return {
+    setMuted(m) { muted = m; if (m) stopMusic(); else startMusic(); },
+    isMuted() { return muted; },
+    sfx, startMusic, stopMusic, ensureCtx,
+  };
+})();
+
+// ---------- Game ----------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// World scale
+const TILE = 32;
+
+// Level layout
+//  .  = empty
+//  G  = ground
+//  B  = brick
+//  Q  = question block (linked to next unanswered question)
+//  P  = pipe (decorative)
+//  F  = flag (goal)
+//  C  = cloud (decorative — drawn separately, ignored here)
+// All rows must be exactly the same length (LEVEL_W). 80 cols here.
+const LEVEL_ROWS = [
+   "................................................................................",
+   "................................................................................",
+   ".....C..............C......................C.................C..................",
+   "................................................................................",
+   "................................................................................",
+   "..........Q.....BBQBB..........Q......BBBQB............QBQBQ.............F......",
+   "................................................................................",
+   "................................................................................",
+   "................................BBB....................BBB.........BBB..........",
+   ".......................P...............P..............................P.........",
+   "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
+   "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
+];
+const LEVEL_W = LEVEL_ROWS[0].length;
+const LEVEL_H = LEVEL_ROWS.length;
+const WORLD_W = LEVEL_W * TILE;
+const WORLD_H = LEVEL_H * TILE;
+
+// Build tile objects
+const tiles = []; // { x,y,w,h,type, hit?, qIndex? }
+const clouds = [];
+let qCounter = 0;
+let goal = null;
+for (let r = 0; r < LEVEL_H; r++) {
+  for (let c = 0; c < LEVEL_W; c++) {
+    const ch = LEVEL_ROWS[r][c];
+    const x = c * TILE, y = r * TILE;
+    if (ch === 'G') tiles.push({ x, y, w: TILE, h: TILE, type: 'ground' });
+    else if (ch === 'B') tiles.push({ x, y, w: TILE, h: TILE, type: 'brick' });
+    else if (ch === 'Q') {
+      tiles.push({ x, y, w: TILE, h: TILE, type: 'q', qIndex: qCounter, used: false, bumpT: 0 });
+      qCounter++;
+    } else if (ch === 'P') {
+      // 2x2 pipe — only emit at top-left corner; skip others
+      tiles.push({ x, y, w: TILE*2, h: TILE*2, type: 'pipe' });
+    } else if (ch === 'F') {
+      goal = { x: x + TILE/2, y: y, w: TILE, h: TILE*5 };
+    } else if (ch === 'C') {
+      clouds.push({ x, y, r: 18 + Math.random()*10, drift: 0.05 + Math.random()*0.05 });
+    }
+  }
+}
+// Add a few extra clouds for parallax fun
+for (let i = 0; i < 20; i++) {
+  clouds.push({
+    x: Math.random() * WORLD_W,
+    y: 20 + Math.random() * 180,
+    r: 14 + Math.random() * 16,
+    drift: 0.04 + Math.random() * 0.08,
+  });
+}
+
+// Player
+const player = {
+  x: 60, y: WORLD_H - TILE * 3,
+  w: 22, h: 30,
+  vx: 0, vy: 0,
+  onGround: false,
+  facing: 1,
+  walkT: 0,
+  invuln: 0,
+  lives: 3,
+  coins: 0,
+  score: 0,
+  answered: 0,
+};
+const GRAVITY = 0.55;
+const MOVE = 0.55;
+const FRICTION = 0.82;
+const MAX_VX = 4.2;
+const JUMP_V = -11.2;
+const STOMP_BOUNCE = -8;
+
+// Enemies (Goombas) — spawned to the right of the player and either patrolling
+// platforms or walking AWAY from the spawn area, so they don't ambush a new run.
+const ENEMY_SPAWNS = [
+  { x: 22 * TILE, dir:  1 },   // ground, walks right
+  { x: 33 * TILE, dir:  1 },   // sits on the BBB platform (cols 32-34)
+  { x: 45 * TILE, dir:  1 },   // ground
+  { x: 56 * TILE, dir: -1 },   // sits on the BBB platform (cols 55-57)
+  { x: 62 * TILE, dir:  1 },   // ground between platforms
+  { x: 68 * TILE, dir:  1 },   // BBB platform (cols 67-69)
+];
+const enemies = [];
+function spawnEnemies() {
+  enemies.length = 0;
+  for (const s of ENEMY_SPAWNS) {
+    // Spawn well above the ground so they settle onto whatever platform is below
+    enemies.push({
+      x: s.x, y: 0,
+      w: 24, h: 22,
+      vx: s.dir * 0.9, vy: 0,
+      dir: s.dir,
+      alive: true,
+      deadT: 0,
+    });
+  }
+}
+spawnEnemies();
+
+// Fireworks particles for win sequence
+const fireworks = []; // { x, y, vx, vy, life, color, trail }
+let winSeq = null; // { phase: 'descend'|'fireworks', t, flagY0, flagYTarget }
+
+// Camera
+let camX = 0;
+
+// Input
+const keys = {};
+window.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  keys[e.key.toLowerCase()] = true;
+  keys[e.code] = true;
+  if (state === 'title' && (e.key === 'Enter' || e.code === 'Space')) {
+    e.preventDefault();
+    startGame();
+    return;
+  }
+  if (state === 'play') {
+    // Prevent Space / arrows from activating any focused button (e.g. the
+    // START button we just clicked) or scrolling the page.
+    if (e.code === 'Space' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+    }
+    if ((e.code === 'Space' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') && player.onGround) {
+      player.vy = JUMP_V;
+      player.onGround = false;
+      Sound.sfx.jump();
+    }
+  }
+  if (e.key.toLowerCase() === 'm') toggleSound();
+  if (state === 'question') {
+    if (e.key >= '1' && e.key <= '4') {
+      e.preventDefault();
+      const idx = parseInt(e.key, 10) - 1;
+      pickAnswer(idx);
+    }
+  }
+});
+window.addEventListener('keyup', e => {
+  keys[e.key.toLowerCase()] = false;
+  keys[e.code] = false;
+});
+
+// Touch fallback: tap left/right half to move, tap upper area to jump
+let touchDir = 0;
+canvas.addEventListener('pointerdown', (e) => {
+  if (state !== 'play') return;
+  const rect = canvas.getBoundingClientRect();
+  const px = (e.clientX - rect.left) / rect.width;
+  const py = (e.clientY - rect.top) / rect.height;
+  if (py < 0.55) {
+    if (player.onGround) { player.vy = JUMP_V; player.onGround = false; Sound.sfx.jump(); }
+  } else {
+    touchDir = px < 0.5 ? -1 : 1;
+  }
+});
+canvas.addEventListener('pointerup', () => { touchDir = 0; });
+canvas.addEventListener('pointercancel', () => { touchDir = 0; });
+
+// Coins floating up after a correct answer
+const fxCoins = []; // { x,y,vy,t,life }
+const particles = []; // { x,y,vx,vy,life,color }
+
+function spawnCoinBurst(x, y, n=8) {
+  for (let i = 0; i < n; i++) {
+    fxCoins.push({
+      x, y,
+      vx: (Math.random()-0.5) * 3,
+      vy: -2 - Math.random()*2,
+      t: 0, life: 60 + Math.random()*30,
+    });
+  }
+  Sound.sfx.coin();
+}
+function spawnHitParticles(x, y) {
+  for (let i = 0; i < 12; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random()-0.5) * 6,
+      vy: -2 - Math.random()*3,
+      life: 30 + Math.random()*20,
+      color: ['#ff4040','#ffd23a','#fff'][Math.floor(Math.random()*3)],
+    });
+  }
+}
+
+// Toast
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+function showToast(text, kind='') {
+  toastEl.textContent = text;
+  toastEl.className = 'toast show ' + kind;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.className = 'toast', 1300);
+}
+
+// State
+let state = 'title'; // 'title' | 'play' | 'question' | 'win' | 'over'
+let currentQuestion = null;   // { tile, qIndex }
+let startTime = 0;
+
+// ---------- Drawing helpers ----------
+function rect(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x|0, y|0, w|0, h|0);
+}
+
+function drawGround(t) {
+  // dirt + grass top
+  rect(t.x, t.y, t.w, t.h, '#c84a1a');
+  rect(t.x, t.y, t.w, 8, '#2bbf2b');
+  // dirt speckles
+  ctx.fillStyle = '#8a2f10';
+  ctx.fillRect(t.x+6, t.y+14, 4, 4);
+  ctx.fillRect(t.x+18, t.y+22, 4, 4);
+  ctx.fillRect(t.x+12, t.y+26, 3, 3);
+}
+
+function drawBrick(t) {
+  rect(t.x, t.y, t.w, t.h, '#c8682d');
+  ctx.fillStyle = '#8a3e14';
+  // brick joints
+  ctx.fillRect(t.x, t.y + 14, t.w, 2);
+  ctx.fillRect(t.x + 10, t.y, 2, 14);
+  ctx.fillRect(t.x + 20, t.y + 16, 2, 16);
+  // top highlight
+  ctx.fillStyle = 'rgba(255,255,255,.15)';
+  ctx.fillRect(t.x, t.y, t.w, 3);
+}
+
+function drawQBlock(t) {
+  const bump = t.bumpT > 0 ? -Math.sin(t.bumpT/8 * Math.PI) * 8 : 0;
+  const y = t.y + bump;
+  if (t.used) {
+    rect(t.x, y, t.w, t.h, '#a06800');
+    ctx.fillStyle = '#6e4400';
+    ctx.fillRect(t.x+2, y+2, t.w-4, t.h-4);
+  } else {
+    // pulse
+    const pulse = 1 + Math.sin(Date.now()/300) * 0.06;
+    ctx.save();
+    ctx.translate(t.x + t.w/2, y + t.h/2);
+    ctx.scale(pulse, pulse);
+    rect(-t.w/2, -t.h/2, t.w, t.h, '#f7b500');
+    ctx.fillStyle = '#b07700';
+    ctx.fillRect(-t.w/2, -t.h/2, t.w, 3);
+    ctx.fillRect(-t.w/2, t.h/2 - 3, t.w, 3);
+    ctx.fillRect(-t.w/2, -t.h/2, 3, t.h);
+    ctx.fillRect(t.w/2 - 3, -t.h/2, 3, t.h);
+    // question mark
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', 0, 1);
+    ctx.restore();
+  }
+}
+
+function drawPipe(t) {
+  // body
+  rect(t.x, t.y + 6, t.w, t.h - 6, '#1ea53a');
+  // lip
+  rect(t.x - 4, t.y, t.w + 8, 12, '#1ea53a');
+  // shading
+  ctx.fillStyle = '#0f6b22';
+  ctx.fillRect(t.x + t.w - 6, t.y + 6, 6, t.h - 6);
+  ctx.fillRect(t.x + t.w + 4 - 6, t.y, 6, 12);
+  ctx.fillStyle = 'rgba(255,255,255,.18)';
+  ctx.fillRect(t.x + 4, t.y + 8, 4, t.h - 10);
+}
+
+function drawCloud(c, offset) {
+  const x = ((c.x - camX * 0.4 - offset) % (WORLD_W + 100));
+  const cx = (x < -50 ? x + WORLD_W + 100 : x);
+  ctx.fillStyle = 'rgba(255,255,255,.92)';
+  ctx.beginPath();
+  ctx.arc(cx,        c.y,     c.r,         0, Math.PI*2);
+  ctx.arc(cx + c.r*0.9, c.y - 4, c.r * 0.85, 0, Math.PI*2);
+  ctx.arc(cx + c.r*1.8, c.y,     c.r * 0.9,  0, Math.PI*2);
+  ctx.arc(cx + c.r*0.9, c.y + 6, c.r * 0.8,  0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawHill(x, y, r) {
+  ctx.fillStyle = '#1f9a1f';
+  ctx.beginPath();
+  ctx.arc(x - camX * 0.6, y, r, Math.PI, 0);
+  ctx.fill();
+}
+
+function drawFlag(g, descentY) {
+  if (!g) return;
+  // pole
+  rect(g.x - 2, g.y - 4, 4, g.h + 4, '#cccccc');
+  rect(g.x,     g.y - 4, 2, g.h + 4, '#888');
+  // gold ball on top
+  ctx.fillStyle = '#ffd23a';
+  ctx.beginPath();
+  ctx.arc(g.x, g.y - 6, 4, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#a07000';
+  ctx.beginPath();
+  ctx.arc(g.x + 1, g.y - 5, 1.5, 0, Math.PI*2);
+  ctx.fill();
+  // base
+  rect(g.x - 10, g.y + g.h, 22, 8, '#888');
+  rect(g.x - 10, g.y + g.h + 6, 22, 2, '#555');
+  // flag at current Y (default = top of pole)
+  const fy = (descentY != null ? descentY : g.y);
+  const wave = Math.sin(Date.now()/200) * 3;
+  ctx.fillStyle = '#1ea53a';
+  ctx.beginPath();
+  ctx.moveTo(g.x + 2, fy);
+  ctx.lineTo(g.x + 30 + wave, fy + 11);
+  ctx.lineTo(g.x + 2, fy + 22);
+  ctx.closePath();
+  ctx.fill();
+  // flag shading
+  ctx.fillStyle = '#0f6b22';
+  ctx.beginPath();
+  ctx.moveTo(g.x + 2, fy + 16);
+  ctx.lineTo(g.x + 30 + wave, fy + 11);
+  ctx.lineTo(g.x + 2, fy + 22);
+  ctx.closePath();
+  ctx.fill();
+  // MCP text
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('MCP', g.x + 6, fy + 14);
+}
+
+// Draw the hero — cartoonish plumber-style sprite with shading and detail
+function drawHero(p, time) {
+  const x = p.x | 0, y = p.y | 0;
+  const flip = p.facing < 0;
+  ctx.save();
+  if (flip) {
+    ctx.translate(x + p.w, 0);
+    ctx.scale(-1, 1);
+    ctx.translate(-x, 0);
+  }
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath();
+  ctx.ellipse(x + p.w/2, y + p.h + 2, p.w/2, 3, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  const walking = Math.abs(p.vx) > 0.5 && p.onGround;
+  const jumping = !p.onGround;
+  const t = walking ? Math.floor(p.walkT/4) % 2 : 0;
+  const swing = walking ? Math.sin(p.walkT/4) * 2 : 0;
+
+  // ---------- legs / boots ----------
+  if (jumping) {
+    // tucked legs in air
+    ctx.fillStyle = '#1a3aa8';
+    ctx.fillRect(x + 4, y + p.h - 8, 6, 6);
+    ctx.fillRect(x + p.w - 10, y + p.h - 8, 6, 6);
+    ctx.fillStyle = '#3a1a08';
+    ctx.fillRect(x + 3, y + p.h - 4, 8, 4);
+    ctx.fillRect(x + p.w - 11, y + p.h - 4, 8, 4);
+    // boot highlight
+    ctx.fillStyle = '#5a2810';
+    ctx.fillRect(x + 3, y + p.h - 2, 8, 2);
+    ctx.fillRect(x + p.w - 11, y + p.h - 2, 8, 2);
+  } else {
+    // overall legs (with offset for walk)
+    ctx.fillStyle = '#1a3aa8';
+    ctx.fillRect(x + 4 + t*2, y + p.h - 10, 6, 8);
+    ctx.fillRect(x + p.w - 10 - t*2, y + p.h - 10, 6, 8);
+    // boots
+    ctx.fillStyle = '#3a1a08';
+    ctx.fillRect(x + 2 + t*2, y + p.h - 4, 9, 4);
+    ctx.fillRect(x + p.w - 11 - t*2, y + p.h - 4, 9, 4);
+    // boot highlight
+    ctx.fillStyle = '#5a2810';
+    ctx.fillRect(x + 2 + t*2, y + p.h - 2, 9, 2);
+    ctx.fillRect(x + p.w - 11 - t*2, y + p.h - 2, 9, 2);
+  }
+
+  // ---------- body / overalls ----------
+  // overalls main
+  ctx.fillStyle = '#2046d6';
+  ctx.fillRect(x + 2, y + p.h - 19, p.w - 4, 11);
+  // overalls shading (right side)
+  ctx.fillStyle = '#1432a0';
+  ctx.fillRect(x + p.w - 5, y + p.h - 19, 3, 11);
+  // shirt visible under overalls (sides + sleeves)
+  ctx.fillStyle = '#e52521';
+  ctx.fillRect(x,         y + p.h - 19, 3, 9);                  // left sleeve
+  ctx.fillRect(x + p.w-3, y + p.h - 19, 3, 9);                  // right sleeve
+  ctx.fillRect(x + 2,     y + p.h - 22, p.w - 4, 3);            // shirt collar/neck strip
+  // sleeve shading
+  ctx.fillStyle = '#a00d0d';
+  ctx.fillRect(x + p.w-2, y + p.h - 17, 2, 7);
+  // hands (gloves)
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(x - 1,       y + p.h - 14 + swing, 4, 4);
+  ctx.fillRect(x + p.w - 3, y + p.h - 14 - swing, 4, 4);
+  ctx.fillStyle = '#cfcfcf';
+  ctx.fillRect(x - 1,       y + p.h - 11 + swing, 4, 1);
+  ctx.fillRect(x + p.w - 3, y + p.h - 11 - swing, 4, 1);
+  // overall straps
+  ctx.fillStyle = '#2046d6';
+  ctx.fillRect(x + 6,       y + p.h - 22, 3, 5);
+  ctx.fillRect(x + p.w - 9, y + p.h - 22, 3, 5);
+  // gold buttons
+  ctx.fillStyle = '#ffd23a';
+  ctx.fillRect(x + 6,       y + p.h - 16, 3, 3);
+  ctx.fillRect(x + p.w - 9, y + p.h - 16, 3, 3);
+  ctx.fillStyle = '#a07000';
+  ctx.fillRect(x + 6,       y + p.h - 14, 3, 1);
+  ctx.fillRect(x + p.w - 9, y + p.h - 14, 3, 1);
+
+  // ---------- head ----------
+  // ears
+  ctx.fillStyle = '#e8b888';
+  ctx.fillRect(x + 1,       y + 10, 3, 5);
+  ctx.fillRect(x + p.w - 4, y + 10, 3, 5);
+  // face base
+  ctx.fillStyle = '#ffd2a3';
+  ctx.fillRect(x + 4, y + 7, p.w - 8, 14);
+  // face shading
+  ctx.fillStyle = '#e8b888';
+  ctx.fillRect(x + p.w - 6, y + 9, 2, 11);
+  ctx.fillRect(x + 4, y + 19, p.w - 8, 2);
+  // sideburns / hair
+  ctx.fillStyle = '#3a1f0f';
+  ctx.fillRect(x + 4, y + 11, 2, 6);
+  ctx.fillRect(x + p.w - 6, y + 11, 2, 6);
+  // big round nose
+  ctx.fillStyle = '#ff9a78';
+  ctx.fillRect(x + p.w/2 - 1, y + 13, 4, 4);
+  ctx.fillStyle = '#cc6a48';
+  ctx.fillRect(x + p.w/2 - 1, y + 16, 4, 1);
+  // eye (front-facing one)
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x + p.w - 10, y + 10, 4, 4);
+  ctx.fillStyle = '#1a3a8a';
+  ctx.fillRect(x + p.w - 9,  y + 11, 2, 3);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x + p.w - 8,  y + 12, 1, 2);
+  // eyebrow
+  ctx.fillStyle = '#3a1f0f';
+  ctx.fillRect(x + p.w - 11, y + 9,  6, 1);
+  // mustache (bushy, two lobes)
+  ctx.fillStyle = '#2a160a';
+  ctx.fillRect(x + 5,       y + 17, p.w - 10, 2);
+  ctx.fillRect(x + 4,       y + 18, 4, 1);
+  ctx.fillRect(x + p.w - 8, y + 18, 4, 1);
+  // mouth
+  ctx.fillStyle = '#7a1010';
+  ctx.fillRect(x + p.w/2 - 1, y + 19, 3, 1);
+
+  // ---------- hat ----------
+  ctx.fillStyle = '#e52521';
+  ctx.fillRect(x + 3, y + 1, p.w - 6, 6);          // hat crown
+  ctx.fillRect(x + p.w - 4, y + 4, 5, 4);          // brim (forward)
+  ctx.fillStyle = '#a00d0d';
+  ctx.fillRect(x + 3, y + 5, p.w - 6, 2);          // brim shadow
+  ctx.fillRect(x + p.w - 4, y + 6, 5, 2);
+  // hat highlight
+  ctx.fillStyle = '#ff5a4a';
+  ctx.fillRect(x + 5, y + 2, p.w - 10, 1);
+  // white circle badge with M
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(x + p.w/2 + 1, y + 4, 3.2, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#e52521';
+  ctx.font = 'bold 6px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('M', x + p.w/2 + 1, y + 4.5);
+
+  ctx.restore();
+
+  // invulnerability flicker
+  if (p.invuln > 0 && Math.floor(time/4) % 2 === 0) {
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+  }
+}
+
+// ---------- Goomba enemy ----------
+function drawGoomba(g, time) {
+  if (!g.alive) {
+    // squashed
+    const x = g.x | 0, y = g.y + g.h - 8;
+    ctx.fillStyle = '#7a4a1a';
+    ctx.fillRect(x, y, g.w, 6);
+    ctx.fillStyle = '#3a200a';
+    ctx.fillRect(x, y + 4, g.w, 2);
+    return;
+  }
+  const x = g.x | 0, y = g.y | 0;
+  const walkT = Math.floor(time / 140) % 2;
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath();
+  ctx.ellipse(x + g.w/2, y + g.h + 2, g.w/2, 3, 0, 0, Math.PI*2);
+  ctx.fill();
+  // feet
+  ctx.fillStyle = '#3a1f0f';
+  ctx.fillRect(x + 1,       y + g.h - 4 + (walkT?0:-1), 8, 4);
+  ctx.fillRect(x + g.w - 9, y + g.h - 4 + (walkT?-1:0), 8, 4);
+  // body (mushroom-ish dome)
+  ctx.fillStyle = '#a0683a';
+  ctx.beginPath();
+  ctx.ellipse(x + g.w/2, y + g.h/2 + 2, g.w/2 - 1, g.h/2 + 2, 0, Math.PI, 0);
+  ctx.fill();
+  ctx.fillRect(x + 2, y + g.h/2 + 2, g.w - 4, g.h/2 - 6);
+  // body shading
+  ctx.fillStyle = '#7a4a1a';
+  ctx.fillRect(x + g.w - 5, y + g.h/2, 4, g.h/2 - 4);
+  // brow
+  ctx.fillStyle = '#3a200a';
+  ctx.fillRect(x + 3,       y + g.h/2 - 2, 5, 2);
+  ctx.fillRect(x + g.w - 8, y + g.h/2 - 2, 5, 2);
+  // eyes
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x + 4,       y + g.h/2,     3, 3);
+  ctx.fillRect(x + g.w - 7, y + g.h/2,     3, 3);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x + 5 + (g.dir>0?1:0),       y + g.h/2 + 1, 1, 2);
+  ctx.fillRect(x + g.w - 6 + (g.dir>0?1:0), y + g.h/2 + 1, 1, 2);
+  // fangs
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x + g.w/2 - 3, y + g.h - 8, 2, 2);
+  ctx.fillRect(x + g.w/2 + 1, y + g.h - 8, 2, 2);
+}
+
+// ---------- Collision ----------
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x &&
+         a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function isSolid(t) {
+  return t.type === 'ground' || t.type === 'brick' ||
+         (t.type === 'q') || t.type === 'pipe';
+}
+
+function moveAndCollide(p, dx, dy) {
+  // X axis
+  p.x += dx;
+  for (const t of tiles) {
+    if (!isSolid(t)) continue;
+    if (rectsOverlap(p, t)) {
+      if (dx > 0) p.x = t.x - p.w;
+      else if (dx < 0) p.x = t.x + t.w;
+      p.vx = 0;
+    }
+  }
+  // Y axis
+  p.y += dy;
+  p.onGround = false;
+  for (const t of tiles) {
+    if (!isSolid(t)) continue;
+    if (rectsOverlap(p, t)) {
+      if (dy > 0) {
+        p.y = t.y - p.h;
+        p.vy = 0;
+        p.onGround = true;
+      } else if (dy < 0) {
+        p.y = t.y + t.h;
+        p.vy = 1;
+        // bumped a block from below
+        if (t.type === 'q' && !t.used) tryHitQBlock(t);
+        if (t.type === 'brick') Sound.sfx.block();
+      }
+    }
+  }
+  // World bounds
+  if (p.x < 0) p.x = 0;
+  if (p.x + p.w > WORLD_W) p.x = WORLD_W - p.w;
+  if (p.y > WORLD_H + 200) {
+    // fell off — lose life
+    loseLife('You fell into the void!');
+  }
+}
+
+function tryHitQBlock(t) {
+  if (t.used) return;
+  if (state !== 'play') return;
+  t.bumpT = 16;
+  Sound.sfx.block();
+  // freeze the world and open question
+  openQuestion(t);
+}
+
+// ---------- Question handling ----------
+const qModal = document.getElementById('q-modal');
+const qText = document.getElementById('q-text');
+const qChoices = document.getElementById('q-choices');
+
+function openQuestion(tile) {
+  // pick next unanswered question (sequential), using the tile's index for variety
+  // but ensure all questions get used
+  const order = tile.qIndex % QUESTIONS.length;
+  const q = QUESTIONS[order];
+  currentQuestion = { tile, qIndex: order, q };
+  state = 'question';
+  qText.textContent = q.q;
+  qChoices.innerHTML = '';
+  q.choices.forEach((c, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'choice';
+    btn.innerHTML = `<span class="key">${i+1}</span><span>${c}</span>`;
+    btn.addEventListener('click', () => pickAnswer(i));
+    qChoices.appendChild(btn);
+  });
+  qModal.classList.add('show');
+}
+
+function pickAnswer(i) {
+  if (state !== 'question' || !currentQuestion) return;
+  const { tile, q } = currentQuestion;
+  const buttons = [...qChoices.querySelectorAll('.choice')];
+  const correctBtn = buttons[q.a];
+  const chosenBtn = buttons[i];
+  // prevent double-pick
+  buttons.forEach(b => b.disabled = true);
+
+  // Audio errors must NEVER block the answer flow. If the SFX throws (e.g.
+  // suspended AudioContext, browser quirks), we still progress to onCorrect /
+  // onWrong so the modal can never get stuck open.
+  const safe = (fn) => { try { fn && fn(); } catch (e) { console.warn('sfx failed', e); } };
+
+  if (i === q.a) {
+    chosenBtn.classList.add('correct');
+    safe(() => Sound.sfx.correct());
+    setTimeout(() => {
+      qModal.classList.remove('show');
+      onCorrect(tile);
+    }, 650);
+  } else {
+    chosenBtn.classList.add('wrong');
+    correctBtn.classList.add('correct');
+    safe(() => Sound.sfx.wrong());
+    setTimeout(() => {
+      qModal.classList.remove('show');
+      onWrong(tile);
+    }, 1100);
+  }
+}
+
+function onCorrect(tile) {
+  tile.used = true;
+  player.answered++;
+  player.score += 100;
+  player.coins += 1;
+  updateHUD();
+  spawnCoinBurst(tile.x + TILE/2, tile.y - 6);
+  showToast('Correct! +100', 'good');
+  // bounce player up a little for feel-good
+  player.vy = -6;
+  state = 'play';
+  currentQuestion = null;
+  checkWinCondition();
+}
+
+function onWrong(tile) {
+  player.lives -= 1;
+  player.invuln = 90;
+  updateHUD();
+  spawnHitParticles(player.x + player.w/2, player.y);
+  // bounce back
+  player.vx = -player.facing * 5;
+  player.vy = -6;
+  showToast('Wrong! −1 life', 'bad');
+  // mark the block as visually "hit" but not used so they can retry — actually mark used so they can move on
+  tile.used = true;
+  state = 'play';
+  currentQuestion = null;
+  if (player.lives <= 0) gameOver();
+}
+
+function checkWinCondition() {
+  // We don't gate explicitly — reaching the flag wins; bonus if all answered.
+}
+
+// ---------- HUD ----------
+const heartsEl = document.getElementById('hearts');
+const coinsEl = document.getElementById('coins');
+const scoreEl = document.getElementById('score');
+const progressEl = document.getElementById('progress');
+
+function updateHUD() {
+  // hearts
+  [...heartsEl.children].forEach((h, i) => {
+    h.classList.toggle('lost', i >= player.lives);
+  });
+  coinsEl.textContent = player.coins;
+  scoreEl.textContent = player.score;
+  const total = tiles.filter(t => t.type === 'q').length;
+  const pct = total === 0 ? 100 : Math.min(100, Math.round((player.answered / total) * 100));
+  progressEl.style.width = pct + '%';
+}
+
+// ---------- Game lifecycle ----------
+function startGame() {
+  Sound.ensureCtx();
+  if (!Sound.isMuted()) Sound.startMusic();
+  document.getElementById('title').classList.add('hidden');
+  document.getElementById('win').classList.add('hidden');
+  document.getElementById('over').classList.add('hidden');
+  // Drop focus off whatever started us (otherwise Space/Enter would re-trigger
+  // that button mid-game and teleport the player to spawn!).
+  if (document.activeElement && document.activeElement.blur) {
+    document.activeElement.blur();
+  }
+  // Reset
+  player.x = 60; player.y = WORLD_H - TILE * 3;
+  player.vx = 0; player.vy = 0;
+  player.facing = 1; player.lives = 3;
+  player.coins = 0; player.score = 0; player.answered = 0;
+  player.invuln = 0;
+  tiles.forEach(t => { if (t.type === 'q') { t.used = false; t.bumpT = 0; } });
+  spawnEnemies();
+  fireworks.length = 0;
+  winSeq = null;
+  camX = 0;
+  state = 'play';
+  startTime = performance.now();
+  updateHUD();
+}
+
+function loseLife(msg) {
+  if (player.invuln > 0) return;
+  player.lives -= 1;
+  player.invuln = 90;
+  showToast(msg || 'Ouch!', 'bad');
+  Sound.sfx.hit();
+  player.x = 60; player.y = WORLD_H - TILE * 3;
+  player.vx = 0; player.vy = 0;
+  // Reset enemies to their starting positions so they don't follow you home
+  spawnEnemies();
+  updateHUD();
+  if (player.lives <= 0) gameOver();
+}
+
+function gameOver() {
+  state = 'over';
+  Sound.stopMusic();
+  Sound.sfx.over();
+  document.getElementById('over').classList.remove('hidden');
+}
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+document.getElementById('retry-btn').addEventListener('click', startGame);
+
+// Sound toggle
+function toggleSound() {
+  const muted = !Sound.isMuted();
+  Sound.setMuted(muted);
+  document.getElementById('snd').textContent = muted ? '🔇' : '♪';
+  if (!muted && state === 'play') Sound.startMusic();
+}
+document.getElementById('snd').addEventListener('click', toggleSound);
+
+// ---------- Main loop ----------
+let lastTime = performance.now();
+function loop(now) {
+  const dt = Math.min(33, now - lastTime);
+  lastTime = now;
+
+  if (state === 'play') step(dt);
+  if (state === 'winning') updateWinSequence();
+  draw(now);
+
+  requestAnimationFrame(loop);
+}
+
+function step(dt) {
+  // Input
+  let ax = 0;
+  if (keys['arrowleft']  || keys['a'] || touchDir === -1) ax -= MOVE;
+  if (keys['arrowright'] || keys['d'] || touchDir ===  1) ax += MOVE;
+
+  player.vx += ax;
+  if (ax === 0) player.vx *= FRICTION;
+  player.vx = Math.max(-MAX_VX, Math.min(MAX_VX, player.vx));
+  if (player.vx > 0.1) player.facing = 1;
+  else if (player.vx < -0.1) player.facing = -1;
+  if (Math.abs(player.vx) > 0.5) player.walkT++;
+
+  player.vy += GRAVITY;
+  if (player.vy > 15) player.vy = 15;
+
+  moveAndCollide(player, player.vx, 0);
+  moveAndCollide(player, 0, player.vy);
+
+  if (player.invuln > 0) player.invuln--;
+
+  // Q-block bump animation
+  for (const t of tiles) if (t.bumpT > 0) t.bumpT--;
+
+  // Enemies
+  updateEnemies();
+  resolveEnemyCollisions();
+
+  // FX
+  for (let i = fxCoins.length - 1; i >= 0; i--) {
+    const c = fxCoins[i];
+    c.x += c.vx; c.y += c.vy; c.vy += 0.18; c.t++;
+    if (c.t > c.life) fxCoins.splice(i, 1);
+  }
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.vy += 0.25; p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Camera follow
+  const targetCamX = Math.max(0, Math.min(WORLD_W - W, player.x - W/2 + player.w/2));
+  camX += (targetCamX - camX) * 0.12;
+
+  // Flag check — kick off win sequence (flag descent → fireworks)
+  if (goal && rectsOverlap(player, goal) && !winSeq && state === 'play') {
+    const totalQ = tiles.filter(t => t.type === 'q').length;
+    if (player.answered >= totalQ) {
+      startWinSequence();
+    } else {
+      // Block: gently push player back and remind them to answer everything
+      player.x = goal.x - player.w - 4;
+      player.vx = Math.min(player.vx, 0);
+      const remaining = totalQ - player.answered;
+      const now = performance.now();
+      if (!player._flagToastT || now - player._flagToastT > 1500) {
+        player._flagToastT = now;
+        showToast(`🔒 Answer ${remaining} more question${remaining===1?'':'s'} to raise the flag!`, 'bad');
+        Sound.sfx.block();
+      }
+    }
+  }
+}
+
+// ---------- Enemies ----------
+function enemyMoveAndCollide(e, dx, dy) {
+  // X
+  e.x += dx;
+  let hitX = false;
+  for (const t of tiles) {
+    if (!isSolid(t)) continue;
+    if (rectsOverlap(e, t)) {
+      if (dx > 0) e.x = t.x - e.w;
+      else if (dx < 0) e.x = t.x + t.w;
+      hitX = true;
+    }
+  }
+  if (e.x <= 0) { e.x = 0; hitX = true; }
+  if (e.x + e.w >= WORLD_W) { e.x = WORLD_W - e.w; hitX = true; }
+  // Y
+  e.y += dy;
+  e.onGround = false;
+  for (const t of tiles) {
+    if (!isSolid(t)) continue;
+    if (rectsOverlap(e, t)) {
+      if (dy > 0) { e.y = t.y - e.h; e.vy = 0; e.onGround = true; }
+      else if (dy < 0) { e.y = t.y + t.h; e.vy = 0; }
+    }
+  }
+  return hitX;
+}
+
+function updateEnemies() {
+  for (const e of enemies) {
+    if (!e.alive) {
+      e.deadT++;
+      continue;
+    }
+    e.vy += GRAVITY;
+    if (e.vy > 15) e.vy = 15;
+    const hitX = enemyMoveAndCollide(e, e.vx, 0);
+    enemyMoveAndCollide(e, 0, e.vy);
+    if (hitX) { e.dir *= -1; e.vx = e.dir * 0.9; }
+    // Check ledge ahead — turn around if no ground in front
+    if (e.onGround) {
+      const ahead = { x: e.x + (e.dir > 0 ? e.w + 2 : -2), y: e.y + e.h + 2, w: 2, h: 4 };
+      let ground = false;
+      for (const t of tiles) {
+        if (t.type !== 'ground' && t.type !== 'brick' && t.type !== 'pipe') continue;
+        if (rectsOverlap(ahead, t)) { ground = true; break; }
+      }
+      if (!ground) { e.dir *= -1; e.vx = e.dir * 0.9; }
+    }
+  }
+}
+
+function resolveEnemyCollisions() {
+  if (player.invuln > 0) return;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (!rectsOverlap(player, e)) continue;
+    // Stomp = player coming down AND mostly above the enemy
+    const playerBottom = player.y + player.h;
+    const stompable = player.vy > 0 && playerBottom < e.y + e.h * 0.6;
+    if (stompable) {
+      e.alive = false;
+      e.deadT = 0;
+      player.vy = STOMP_BOUNCE;
+      player.score += 50;
+      showToast('Stomp! +50', 'good');
+      spawnHitParticles(e.x + e.w/2, e.y);
+      Sound.sfx.stomp();
+      updateHUD();
+    } else {
+      loseLife('A Goomba got you!');
+      return; // stop checking the rest this frame
+    }
+  }
+}
+
+// ---------- Win sequence: flag descent + fireworks ----------
+function startWinSequence() {
+  state = 'winning';
+  Sound.stopMusic();
+  Sound.sfx.win();
+  // freeze player at the flag
+  player.vx = 0; player.vy = 0;
+  // animate the flag (currently at goal.y) sliding down the pole
+  const poleTopY = goal.y;
+  const poleBottomY = goal.y + goal.h - 24;
+  winSeq = {
+    phase: 'descend',
+    t: 0,
+    flagY: poleTopY,
+    flagY0: poleTopY,
+    flagY1: poleBottomY,
+    fwTimer: 0,
+  };
+}
+
+function spawnFirework(cx, cy) {
+  const colors = ['#ff4040','#ffd23a','#2bff6a','#40d0ff','#ff8aff','#ffffff'];
+  const color = colors[(Math.random()*colors.length)|0];
+  const burst = 24 + (Math.random()*12|0);
+  for (let i = 0; i < burst; i++) {
+    const ang = (i / burst) * Math.PI * 2 + Math.random()*0.2;
+    const sp = 2.5 + Math.random()*2.5;
+    fireworks.push({
+      x: cx, y: cy,
+      vx: Math.cos(ang)*sp, vy: Math.sin(ang)*sp,
+      life: 50 + Math.random()*30,
+      maxLife: 80,
+      color,
+      trail: [],
+    });
+  }
+  Sound.sfx.firework();
+}
+
+function updateWinSequence() {
+  if (!winSeq) return;
+  winSeq.t++;
+  if (winSeq.phase === 'descend') {
+    const dur = 70;
+    const k = Math.min(1, winSeq.t / dur);
+    // ease-out
+    const e = 1 - Math.pow(1 - k, 2.4);
+    winSeq.flagY = winSeq.flagY0 + (winSeq.flagY1 - winSeq.flagY0) * e;
+    if (k >= 1) {
+      winSeq.phase = 'fireworks';
+      winSeq.t = 0;
+    }
+  } else if (winSeq.phase === 'fireworks') {
+    winSeq.fwTimer--;
+    if (winSeq.fwTimer <= 0) {
+      const cx = camX + 80 + Math.random() * (W - 160);
+      const cy = 60  + Math.random() * (H * 0.45);
+      spawnFirework(cx, cy);
+      winSeq.fwTimer = 14 + (Math.random()*10|0);
+    }
+    if (winSeq.t > 200) {
+      showWinPanel();
+    }
+  }
+  // Update firework particles
+  for (let i = fireworks.length - 1; i >= 0; i--) {
+    const f = fireworks[i];
+    f.trail.push({ x: f.x, y: f.y });
+    if (f.trail.length > 6) f.trail.shift();
+    f.x += f.vx; f.y += f.vy;
+    f.vy += 0.06;
+    f.vx *= 0.985;
+    f.life--;
+    if (f.life <= 0) fireworks.splice(i, 1);
+  }
+}
+
+function drawFireworks() {
+  for (const f of fireworks) {
+    // trail
+    for (let i = 0; i < f.trail.length; i++) {
+      const p = f.trail[i];
+      ctx.globalAlpha = (i / f.trail.length) * (f.life / 80) * 0.6;
+      ctx.fillStyle = f.color;
+      ctx.fillRect(p.x, p.y, 2, 2);
+    }
+    ctx.globalAlpha = Math.max(0, f.life / 80);
+    ctx.fillStyle = f.color;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, 2.5, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function showWinPanel() {
+  state = 'win';
+  winSeq = null;
+  document.getElementById('win-score').textContent = player.score;
+  document.getElementById('win-coins').textContent = player.coins;
+  document.getElementById('win-lives').textContent = player.lives;
+  const secs = Math.max(0, Math.round((performance.now() - startTime) / 1000));
+  document.getElementById('win-time').textContent = secs + 's';
+  document.getElementById('win').classList.remove('hidden');
+}
+
+function draw(time) {
+  // Sky gradient is on the frame background; clear with light blue for safety
+  ctx.fillStyle = '#5c94fc';
+  ctx.fillRect(0, 0, W, H);
+
+  // Distant hills (parallax)
+  drawHill(220, H - TILE*2 - 6, 90);
+  drawHill(620, H - TILE*2 - 6, 110);
+  drawHill(1050, H - TILE*2 - 6, 95);
+  drawHill(1600, H - TILE*2 - 6, 130);
+  drawHill(2200, H - TILE*2 - 6, 95);
+
+  // Clouds
+  for (const c of clouds) drawCloud(c, 0);
+
+  // World offset
+  ctx.save();
+  ctx.translate(-camX | 0, 0);
+
+  // Tiles
+  for (const t of tiles) {
+    // Cull tiles off screen
+    if (t.x + t.w < camX - 32 || t.x > camX + W + 32) continue;
+    switch (t.type) {
+      case 'ground': drawGround(t); break;
+      case 'brick':  drawBrick(t); break;
+      case 'q':      drawQBlock(t); break;
+      case 'pipe':   drawPipe(t); break;
+    }
+  }
+
+  // Flag (with descent animation during win sequence)
+  drawFlag(goal, winSeq ? winSeq.flagY : null);
+
+  // Enemies
+  for (const e of enemies) {
+    if (!e.alive && e.deadT > 60) continue;
+    if (e.x + e.w < camX - 32 || e.x > camX + W + 32) continue;
+    drawGoomba(e, time);
+  }
+
+  // FX coins
+  for (const c of fxCoins) {
+    const a = Math.max(0, 1 - c.t / c.life);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#ffd23a';
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 5 + Math.sin(c.t/3)*1.5, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // Particles
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / 40);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, 3, 3);
+    ctx.globalAlpha = 1;
+  }
+
+  // Hero
+  drawHero(player, time);
+
+  // Fireworks (drawn in world space so they appear above the level)
+  drawFireworks();
+
+  ctx.restore();
+}
+
+// ---------- Kickoff ----------
+updateHUD();
+requestAnimationFrame(loop);
+
+// Audio autostart: many browsers require a user gesture, so we ensure the
+// AudioContext is resumed once any key is pressed or the start button is clicked.
+window.addEventListener('keydown', () => Sound.ensureCtx(), { once: true });
+window.addEventListener('pointerdown', () => Sound.ensureCtx(), { once: true });
+</script>
+</body>
+</html>
